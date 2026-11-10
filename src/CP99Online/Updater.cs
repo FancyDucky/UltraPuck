@@ -47,11 +47,12 @@ namespace CP99Online
             }
             yield return new WaitForSeconds(4f);
 
-            var vReq = new WWW(BaseUrl + "version.txt");
+            var vReq = new WWW(BaseUrl + "version.txt" + Bust());
             yield return vReq;
             if (!string.IsNullOrEmpty(vReq.error))
             {
                 var err = vReq.error.Trim();
+                NetLog.Info("Update check: " + BaseUrl + "version.txt -> " + err);
                 Fail(err.StartsWith("404") ? "No update published yet" : "Couldn't check for updates (" + err + ")");
                 yield break;
             }
@@ -63,7 +64,7 @@ namespace CP99Online
 
             Status = "Downloading " + Latest + "...";
             NetLog.Info("Update check: " + Latest + " available, downloading");
-            var dReq = new WWW(BaseUrl + "CP99Online.dll");
+            var dReq = new WWW(BaseUrl + "CP99Online.dll" + Bust());
             yield return dReq;
             if (!string.IsNullOrEmpty(dReq.error)) { Fail("Update download failed (" + dReq.error.Trim() + ")"); yield break; }
             var bytes = dReq.bytes;
@@ -112,6 +113,9 @@ namespace CP99Online
             s = s.Trim().TrimStart('v', 'V');
             try { v = new Version(s); return true; } catch { return false; }
         }
+
+        /// <summary>Unique query string so Windows' web cache never serves an old answer (e.g. a 404 from before a release).</summary>
+        private static string Bust() { return BaseUrl.StartsWith("http") ? "?t=" + DateTime.UtcNow.Ticks : string.Empty; }
 
         private static void TryDelete(string path) { try { if (File.Exists(path)) File.Delete(path); } catch { } }
         private static void TryMove(string a, string b) { try { File.Move(a, b); } catch { } }
