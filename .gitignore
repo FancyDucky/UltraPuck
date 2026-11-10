@@ -1,0 +1,18 @@
+# Decompiled game code is the developer's copyrighted work: reference only, never commit.
+decompiled/
+# Unrelated project that happens to live in this folder.
+RLTAS-clean/
+
+# Build output
+**/bin/
+**/obj/
+dist/build/
+dist/*.zip
+
+# Editor / OS clutter
+.vs/
+*.user
+Thumbs.db
+
+# Plugin DLL in the payload is replaced by a fresh build in make-dist.ps1
+dist/payload/BepInEx/plugins/
