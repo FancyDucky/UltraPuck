@@ -11,6 +11,19 @@ namespace CP99Online
         private static readonly int[] FpsOptions = { 60, 120, 144, 240, 0 };
         private static readonly string[] Tabs = { "Mods", "Online" };
 
+        private static ModMenu _instance;
+        internal static bool IsOpen { get { return _instance != null && _instance._open; } }
+
+        /// <summary>Open the overlay on a tab (0 = Mods, 1 = Online). Used by the in-game menu entries.</summary>
+        internal static void Show(int tab)
+        {
+            if (_instance == null) return;
+            _instance._tab = tab;
+            _instance.SetOpen(true);
+        }
+
+        private void Awake() { _instance = this; }
+
         private bool _open;
         private bool _cursorVisibleBefore;
         private int _tab;

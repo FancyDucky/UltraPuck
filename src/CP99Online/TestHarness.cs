@@ -108,3 +108,67 @@ namespace CP99Online
         private static bool Prefix() { return !InTest; }
     }
 }
+
+namespace CP99Online
+{
+    /// <summary>
+    /// Hands-free walk through the in-game menu entries (env CP99_MENUTEST=1, screenshots to CP99_SHOTDIR).
+    /// Drives the game's own MenuNavigator from code: no key presses. Does nothing in normal play.
+    /// </summary>
+    internal class MenuTest : MonoBehaviour
+    {
+        private static readonly bool Enabled = Environment.GetEnvironmentVariable("CP99_MENUTEST") == "1";
+        private bool _started;
+
+        private void Update()
+        {
+            if (!Enabled || _started || Application.loadedLevelName != "MainMenu" || Time.realtimeSinceStartup < 14f) return;
+            if (MenuGlobals.menuManager == null) return;
+            _started = true;
+            StartCoroutine(Run());
+        }
+
+        private static System.Collections.IEnumerator Run()
+        {
+            var dir = Environment.GetEnvironmentVariable("CP99_SHOTDIR") ?? ".";
+            var nav = MenuGlobals.menuManager.menuNavigator;
+            var ss = FindObjectOfType<StartScreen>();
+            if (ss != null) ss.SendMessage("SkipLocalization");
+            yield return new WaitForSeconds(2f);
+            Shot(dir, "m1_main"); yield return new WaitForSeconds(2f);
+
+            nav.MoveDownList(); nav.NextMenu();                  // Play Online
+            yield return new WaitForSeconds(1.5f); Shot(dir, "m2_online_idle"); yield return new WaitForSeconds(2f);
+            nav.MoveDownList(); nav.NextMenu();                  // Team toggle (stays open)
+            yield return new WaitForSeconds(1f); Shot(dir, "m3_online_team"); yield return new WaitForSeconds(2f);
+            NetSession.Instance.StartHostDirect(27199, "127.0.0.1");
+            yield return new WaitForSeconds(1.5f); Shot(dir, "m4_online_host"); yield return new WaitForSeconds(2f);
+            NetSession.Instance.Stop("test");
+            yield return new WaitForSeconds(0.5f);
+            nav.PreviousMenu();
+            yield return new WaitForSeconds(1f);
+
+            for (var i = 0; i < 6; i++) nav.MoveDownList();     // Mods
+            yield return new WaitForSeconds(0.5f); Shot(dir, "m5_main_mods_selected"); yield return new WaitForSeconds(2f);
+            nav.NextMenu();
+            yield return new WaitForSeconds(1.5f); Shot(dir, "m6_mods"); yield return new WaitForSeconds(2f);
+            nav.NextMenu();                                      // toggle No Boost Slowdown in place
+            yield return new WaitForSeconds(1f); Shot(dir, "m7_boost_toggled"); yield return new WaitForSeconds(2f);
+            nav.MoveDownList(); nav.NextMenu();                  // cycle FPS limit
+            yield return new WaitForSeconds(1f); Shot(dir, "m8_fps_cycled"); yield return new WaitForSeconds(2f);
+            nav.PreviousMenu(); yield return new WaitForSeconds(1.5f);
+            Shot(dir, "m9_back_main"); yield return new WaitForSeconds(2f);
+            NetLog.Info("MENUTEST done");
+        }
+
+        private static string Path(Transform t) { return t.parent == null ? t.name : Path(t.parent) + "/" + t.name; }
+
+        private static void Shot(string dir, string name)
+        {
+            var nav = MenuGlobals.menuManager.menuNavigator;
+            NetLog.Info("MENUTEST " + name + " menu=" + (nav.selectedMenu ? nav.selectedMenu.name : "-") +
+                " sel=" + (nav.selectedElement ? nav.selectedElement.GetComponent<TextMesh>().text : "-"));
+            Application.CaptureScreenshot(System.IO.Path.Combine(dir, name + ".png"));
+        }
+    }
+}

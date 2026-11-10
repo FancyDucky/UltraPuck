@@ -5,7 +5,8 @@ A mod for [ClusterPuck 99](https://store.steampowered.com/app/337960/) that adds
 - **Online multiplayer** — host through Steam (friends-only lobby + invites, no port forwarding) or direct IP.
 - **No slowdown after boost** (toggle).
 - **Uncapped FPS** (60 / 120 / 144 / 240 / unlimited).
-- **In-game mod menu** — F8, or hold View/Back on a controller.
+- **Play Online** and **Mods** entries in the game's own main menu (keyboard and controller).
+- **Overlay menu** for extras like direct IP — F8, or hold View/Back on a controller.
 - Windows, Linux and Steam Deck (via Proton).
 
 ## Install
