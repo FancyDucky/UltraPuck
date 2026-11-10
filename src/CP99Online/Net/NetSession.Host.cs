@@ -139,7 +139,7 @@ namespace CP99Online.Net
                     if (ci != null) return;
                     if (version != Proto.Version)
                     {
-                        Reject(c, "Mod version mismatch (host protocol " + Proto.Version + ", yours " + version + "). Update CP99 Online.");
+                        Reject(c, "Mod version mismatch (host protocol " + Proto.Version + ", yours " + version + "). Update UltraPuck.");
                         return;
                     }
                     if (_clients.Count >= Proto.MaxClients)

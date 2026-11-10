@@ -8,7 +8,6 @@ namespace CP99Online
     internal class ModMenu : MonoBehaviour
     {
         private const int WindowId = 0x43503939;
-        private static readonly int[] FpsOptions = { 60, 120, 144, 240, 0 };
         private static readonly string[] Tabs = { "Mods", "Online" };
 
         private static ModMenu _instance;
@@ -101,7 +100,7 @@ namespace CP99Online
             var oldMatrix = GUI.matrix;
             if (scale > 1f) GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1f));
             _window.height = 10f; // let GUILayout size it to the content
-            _window = GUILayout.Window(WindowId, _window, DrawWindow, "CP99 Online " + Plugin.Version, _windowStyle);
+            _window = GUILayout.Window(WindowId, _window, DrawWindow, "UltraPuck " + Plugin.Version, _windowStyle);
             GUI.matrix = oldMatrix;
         }
 
@@ -121,28 +120,44 @@ namespace CP99Online
 
         private void DrawMods()
         {
-            GUILayout.Label("Mechanics", _header);
-            Plugin.NoBoostSlowdown.Value = GUILayout.Toggle(Plugin.NoBoostSlowdown.Value, " No slowdown after boost");
+            GUILayout.Label("Mods", _header);
+            _modScroll = GUILayout.BeginScrollView(_modScroll, GUILayout.Height(Mathf.Min(320f, 60f + 70f * UltraPuck.ModManager.All.Length)));
+            foreach (var m in UltraPuck.ModManager.All)
+            {
+                GUILayout.BeginHorizontal();
+                var on = GUILayout.Toggle(m.Enabled, " " + m.Name, GUILayout.Width(200f));
+                if (on != m.Enabled) UltraPuck.ModManager.SetEnabled(m, on);
+                GUILayout.Label((string.IsNullOrEmpty(m.Author) ? string.Empty : m.Author + "  ") + "v" + m.Version, _dim);
+                GUILayout.EndHorizontal();
+                if (!string.IsNullOrEmpty(m.Description)) GUILayout.Label(m.Description, _dim);
+                if (m.Error != null) GUILayout.Label("Turned off after an error: " + m.Error, _dim);
+                foreach (var st in m.Settings)
+                {
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label("   " + st.Label, GUILayout.Width(120f));
+                    for (var i = 0; i < st.Options.Length; i++)
+                        if (GUILayout.Toggle(st.Index == i, st.Options[i], GUI.skin.button) && st.Index != i) st.Index = i;
+                    GUILayout.EndHorizontal();
+                }
+                GUILayout.Space(6f);
+            }
+            GUILayout.EndScrollView();
+            foreach (var err in UltraPuck.ModManager.LoadErrors) GUILayout.Label("Couldn't load " + err, _dim);
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Open Mods folder"))
+                GameMenu.OpenModsFolder();
+            GUILayout.EndHorizontal();
+            GUILayout.Label("Put mod .dll files in the Mods folder in the game folder and restart. Online play is always on.", _dim);
             if (NetSession.IsClient)
-                GUILayout.Label("In someone else's game the host's mechanics settings apply.", _dim);
+                GUILayout.Label("In someone else's game the host's gameplay mods apply.", _dim);
 
             GUILayout.Space(8f);
             GUILayout.Label("Updates", _header);
             Plugin.AutoUpdate.Value = GUILayout.Toggle(Plugin.AutoUpdate.Value, " Update automatically from GitHub");
             GUILayout.Label(Updater.Status, _dim);
-
-            GUILayout.Space(8f);
-            var limit = Plugin.FrameRateLimit.Value;
-            GUILayout.Label("FPS limit: " + (limit > 0 ? limit.ToString() : "Unlimited"), _header);
-            GUILayout.BeginHorizontal();
-            foreach (var option in FpsOptions)
-            {
-                var label = option > 0 ? option.ToString() : "Off";
-                if (GUILayout.Toggle(limit == option, label, GUI.skin.button) && limit != option)
-                    Plugin.FrameRateLimit.Value = option;
-            }
-            GUILayout.EndHorizontal();
         }
+
+        private Vector2 _modScroll;
 
         // ------------------------------------------------------------------ Online tab
 

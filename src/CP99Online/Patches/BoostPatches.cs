@@ -13,7 +13,7 @@ namespace CP99Online.Patches
     {
         private static bool Prefix(SpeedAddition speed)
         {
-            return !(Plugin.NoBoostSlowdown.Value && speed.useDecay && speed.speed < 0f);
+            return !(UltraPuck.BetterBoost.Active && speed.useDecay && speed.speed < 0f);
         }
     }
 }

@@ -1,9 +1,9 @@
-CP99 Online {VERSION} - mod for ClusterPuck 99
-Online play, no slowdown after boost, uncapped FPS, and an in-game mod menu (F8).
+UltraPuck {VERSION} - mod for ClusterPuck 99
+Online play for ClusterPuck 99, plus a mod manager with built-in mods (FPS+, Better Boost).
 
 INSTALL ON WINDOWS
   1. Extract this zip (right-click > Extract All).
-  2. Double-click "Install CP99 Online.bat".
+  2. Double-click "Install UltraPuck.bat".
      It finds ClusterPuck 99 through Steam and copies the mod in. If it can't find
      the game it asks you to pick the folder.
   3. Launch ClusterPuck 99 from Steam and press F8.
@@ -28,13 +28,18 @@ PLAY ONLINE
   team, just like local multiplayer. The host presses Start and picks the arena and mode while
   everyone watches. After the match everyone returns to player select together.
   One player per PC online; the host can also add couch players and AI bots.
-  Mods:  Main menu > Mods (boost slowdown, FPS limit). F8 (or hold View/Back on a controller)
-         opens the overlay menu with extra options such as direct IP.
   "Host direct IP" also works but needs UDP port 27099 forwarded on the host's router.
 
+MODS
+  Main menu > Mods lists every mod. Select one to turn it on or off and change its settings.
+  Built in: FPS+ (raise the 60 FPS cap) and Better Boost (no slowdown after boosting).
+  Add more: put a mod's .dll in the "Mods" folder in the game folder (Mods > Open Mods Folder),
+  then restart the game. Online, the host's gameplay mods apply.
+  F8 (or hold View/Back on a controller) opens an overlay with the same options, plus direct IP.
+
 UNINSTALL
-  Double-click "Uninstall CP99 Online.bat". It removes the mod and puts back any
-  files it replaced. (Steam > Properties > Installed Files > Verify also restores the game.)
+  Double-click "Uninstall UltraPuck.bat". It removes the mod and puts back any
+  files it replaced. The Mods folder (mods you added) is left alone. (Steam > Properties > Installed Files > Verify also restores the game.)
 
 NOTES
   - Windows may show a security warning for the .bat (it came from a download):

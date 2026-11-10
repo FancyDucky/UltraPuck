@@ -10,11 +10,11 @@ namespace CP99Online
 {
     public enum ControllerChoice { KeyboardMouse, Gamepad }
 
-    [BepInPlugin(Guid, "CP99 Online", Version)]
+    [BepInPlugin(Guid, "UltraPuck", Version)]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "cp99.online";
-        public const string Version = "0.4.0";
+        public const string Version = "0.5.0";
 
         internal static ManualLogSource Logger_;
         internal static ConfigEntry<bool> NoBoostSlowdown;
@@ -40,11 +40,11 @@ namespace CP99Online
             Logger_ = Logger;
 
             NoBoostSlowdown = Config.Bind("Mechanics", "NoBoostSlowdown", true,
-                "Remove the temporary loss of drive after using the boost/shove.");
+                "Old setting, only read once to set Better Boost's starting on/off state (now in ultrapuck.mods.cfg).");
             MenuKey = Config.Bind("General", "MenuKey", KeyCode.F8,
                 "Key that opens and closes the mod menu.");
             FrameRateLimit = Config.Bind("Display", "FrameRateLimit", 0,
-                "Maximum frames per second. 0 = unlimited (the game normally caps at 60). " +
+                "FPS+ mod: maximum frames per second. 0 = unlimited (the game normally caps at 60). " +
                 "If FPS still stops at your monitor's refresh rate, turn off VSync in your GPU settings.");
             FrameRateLimit.SettingChanged += (s, e) => Patches.FrameRate.Apply();
             PlayerName = Config.Bind("Online", "PlayerName", string.Empty,
@@ -77,7 +77,7 @@ namespace CP99Online
                 patched++;
                 Logger.LogDebug("Patched " + method.DeclaringType.Name + "." + method.Name);
             }
-            Logger.LogInfo("CP99 Online " + Version + " loaded. Patches=" + patched + " NoBoostSlowdown=" + NoBoostSlowdown.Value);
+            Logger.LogInfo("UltraPuck " + Version + " loaded. Patches=" + patched);
         }
 
         // BepInEx runs Awake very early on this Unity version; touching Application or adding
@@ -86,6 +86,7 @@ namespace CP99Online
         {
             // Online play: the host must keep simulating while alt-tabbed.
             Application.runInBackground = true;
+            UltraPuck.ModManager.LoadAll(gameObject);
             Patches.FrameRate.Apply();
             NetLog.Init(Path.GetDirectoryName(Info.Location));
             gameObject.AddComponent<NetSession>();

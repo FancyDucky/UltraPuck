@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using CP99Online.Net;
 using HarmonyLib;
+using UltraPuck;
 using UnityEngine;
 
 namespace CP99Online
@@ -37,7 +38,9 @@ namespace CP99Online
             // so settings change in place and the friend list replaces the Play Online items while browsing)
             var online = ModPanel.Create(optionsPanel, "CP99_Online", "Play Online", main, true, OnlineItems, OnlineKey);
             online.OnOpen = () => _browsing = false;
-            var mods = ModPanel.Create(optionsPanel, "CP99_Mods", "Mods", main, true, ModsItems, () => "mods");
+            var mods = ModPanel.Create(optionsPanel, "CP99_Mods", "Mods", main, true, ModsItems, ModsKey);
+            mods.OnOpen = () => { _modPage = null; _lastMod = null; _listPage = 0; };
+            ModsPanel = mods;
             online.Rebuild(true);
             mods.Rebuild(true);
 
@@ -176,31 +179,110 @@ namespace CP99Online
             return items;
         }
 
-        // ------------------------------------------------------------------ Mods
+        // ------------------------------------------------------------------ Mods (mod manager)
+        // One panel with two views: the mod list, and one mod's page (on/off + its settings). B on a mod's
+        // page goes back to the list (MenuNavigatorBackPatch).
 
-        private static readonly int[] FpsOptions = { 60, 120, 144, 240, 0 };
+        internal static ModPanel ModsPanel;
+        private static UltraMod _modPage, _lastMod;
+        private static int _listPage;
+        private const int ModsPerPage = 5;
+        private const int InfoChars = 46;
 
-        private static string FpsName(int v) { return v > 0 ? v.ToString() : "Unlimited"; }
+        private static string ModsKey()
+        {
+            return _modPage != null ? "mod|" + _modPage.Id : "list|" + _listPage + "|" + ModManager.All.Length;
+        }
+
+        internal static bool ModPageOpen { get { return _modPage != null; } }
+
+        internal static void CloseModPage()
+        {
+            _lastMod = _modPage;
+            _modPage = null;
+        }
+
+        private static string OnOff(UltraMod m)
+        {
+            return m.Error != null && !m.Enabled ? "Error" : m.Enabled ? "On" : "Off";
+        }
 
         private static List<Item> ModsItems(ModPanel p)
         {
-            return new List<Item>
+            return _modPage != null ? ModPageItems(_modPage) : ModListItems();
+        }
+
+        private static List<Item> ModListItems()
+        {
+            var mods = ModManager.All;
+            var pages = Math.Max(1, (mods.Length + ModsPerPage - 1) / ModsPerPage);
+            _listPage = Mathf.Clamp(_listPage, 0, pages - 1);
+            var items = new List<Item>();
+            foreach (var mod in mods.Skip(_listPage * ModsPerPage).Take(ModsPerPage))
             {
-                Item.Action(() => "No Boost Slowdown: " + (Plugin.NoBoostSlowdown.Value ? "On" : "Off"),
-                    () => Plugin.NoBoostSlowdown.Value = !Plugin.NoBoostSlowdown.Value),
-                Item.Action(() => "FPS Limit: " + FpsName(Plugin.FrameRateLimit.Value), () =>
-                {
-                    var i = Array.IndexOf(FpsOptions, Plugin.FrameRateLimit.Value);
-                    Plugin.FrameRateLimit.Value = FpsOptions[(i + 1) % FpsOptions.Length];
-                }),
-                Item.Action(() => "Auto Update: " + (Plugin.AutoUpdate.Value ? "On" : "Off"),
-                    () => Plugin.AutoUpdate.Value = !Plugin.AutoUpdate.Value),
-                Item.Action(() => "More Options (F8)", () => ModMenu.Show(0)),
-                Item.Info(() => "CP99 Online " + Plugin.Version + ": " + Updater.Status),
-                Item.Info(() => "Select a setting to change it."),
-                Item.Info(() => "No Boost Slowdown: boosting doesn't slow you down afterwards."),
-                Item.Info(() => "Online, the host's mechanics settings apply."),
+                var m = mod;
+                items.Add(Item.Choice(() => m.Name + ": " + OnOff(m), () => _modPage = m, m == _lastMod));
+            }
+            if (pages > 1)
+                items.Add(Item.Action(() => "More Mods (" + (_listPage + 1) + "/" + pages + ")", () => _listPage = (_listPage + 1) % pages));
+            items.Add(Item.Action(() => "Auto Update: " + (Plugin.AutoUpdate.Value ? "On" : "Off"),
+                () => Plugin.AutoUpdate.Value = !Plugin.AutoUpdate.Value));
+            items.Add(Item.Action(() => "Open Mods Folder", OpenModsFolder));
+            items.Add(Item.Action(() => "More Options (F8)", () => ModMenu.Show(0)));
+            items.Add(Item.Info(() => "UltraPuck " + Plugin.Version + ": " + Updater.Status));
+            items.Add(Item.Info(() => "Select a mod to turn it on or off. Online play is always on."));
+            items.Add(Item.Info(() => ModManager.LoadErrors.Count == 0
+                ? "Add mods: put their .dll in the game's Mods folder, then restart."
+                : ModManager.LoadErrors.Count + " mod file(s) couldn't load: " + string.Join(", ", ModManager.LoadErrors.ToArray())));
+            return items;
+        }
+
+        private static List<Item> ModPageItems(UltraMod m)
+        {
+            var items = new List<Item>
+            {
+                Item.Action(() => m.Name + ": " + OnOff(m), () => ModManager.SetEnabled(m, !m.Enabled)),
             };
+            foreach (var setting in m.Settings)
+            {
+                var st = setting;
+                items.Add(Item.Action(() => st.Label + ": " + st.ValueText, st.Next));
+            }
+            items.Add(Item.Action(() => "Back", CloseModPage));
+            var by = (string.IsNullOrEmpty(m.Author) ? string.Empty : "by " + m.Author + ", ") + "version " + m.Version +
+                (m.Builtin ? " (built in)" : " (" + m.Source + ")");
+            foreach (var line in Wrap(m.Description)) { var l = line; items.Add(Item.Info(() => l)); }
+            items.Add(Item.Info(() => by));
+            items.Add(Item.Info(() => m.Error != null ? "Turned off after an error: " + Clip(m.Error) : string.Empty));
+            return items;
+        }
+
+        internal static void OpenModsFolder()
+        {
+            try
+            {
+                System.IO.Directory.CreateDirectory(ModManager.ModsFolder);
+                Application.OpenURL("file:///" + ModManager.ModsFolder.Replace('\\', '/'));
+            }
+            catch (Exception ex) { NetLog.Warn("Open Mods folder: " + ex.Message); }
+        }
+
+        private static string Clip(string s) { return s.Length > InfoChars + 20 ? s.Substring(0, InfoChars + 17) + "..." : s; }
+
+        /// <summary>TextMesh doesn't wrap, so split long descriptions into short info lines (at most 3).</summary>
+        private static List<string> Wrap(string text)
+        {
+            var lines = new List<string>();
+            if (string.IsNullOrEmpty(text)) return lines;
+            var line = string.Empty;
+            foreach (var word in text.Split(' '))
+            {
+                if (line.Length > 0 && line.Length + 1 + word.Length > InfoChars) { lines.Add(line); line = word; }
+                else line = line.Length == 0 ? word : line + " " + word;
+            }
+            if (line.Length > 0) lines.Add(line);
+            if (lines.Count > 3) { lines.RemoveRange(3, lines.Count - 3); lines[2] += "..."; }
+            return lines;
         }
     }
 
@@ -398,6 +480,20 @@ namespace CP99Online
             if (Application.loadedLevelName != "MainMenu") return;
             try { GameMenu.Build(__instance); }
             catch (Exception ex) { NetLog.Warn("Couldn't add main menu entries: " + ex); }
+        }
+    }
+
+    /// <summary>B on a mod's page goes back to the mod list instead of leaving the Mods menu.</summary>
+    [HarmonyPatch(typeof(MenuNavigator), nameof(MenuNavigator.PreviousMenu))]
+    internal static class MenuNavigatorBackPatch
+    {
+        private static bool Prefix(MenuNavigator __instance)
+        {
+            var panel = GameMenu.ModsPanel;
+            if (panel == null || __instance.selectedMenu != panel.List || !GameMenu.ModPageOpen) return true;
+            GameMenu.CloseModPage();
+            __instance.prevMenuSound.Play();
+            return false;
         }
     }
 

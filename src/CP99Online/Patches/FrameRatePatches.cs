@@ -5,10 +5,11 @@ namespace CP99Online.Patches
 {
     internal static class FrameRate
     {
-        /// <summary>Applies Plugin.FrameRateLimit (0 = unlimited).</summary>
+        /// <summary>Applies the FPS+ limit (0 = unlimited), or the game's own 60 when FPS+ is off.</summary>
         public static void Apply()
         {
-            var limit = Plugin.FrameRateLimit.Value;
+            var fps = UltraPuck.FpsPlus.Instance;
+            var limit = fps != null && fps.Enabled ? Plugin.FrameRateLimit.Value : 60;
             Application.targetFrameRate = limit > 0 ? limit : -1;
         }
     }

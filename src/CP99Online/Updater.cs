@@ -16,7 +16,7 @@ namespace CP99Online
     /// </summary>
     internal class Updater : MonoBehaviour
     {
-        internal const string Repo = "FancyDucky/ClusterPuck-99-Ultra";
+        internal const string Repo = "FancyDucky/UltraPuck";
 
         internal static string Status = "Checking for updates...";
         internal static string Latest;
@@ -97,7 +97,7 @@ namespace CP99Online
             if (!RestartNeeded || Time.realtimeSinceStartup > _toastUntil) return;
             var style = new GUIStyle(GUI.skin.box) { fontSize = 16, alignment = TextAnchor.MiddleCenter, wordWrap = true };
             GUI.Box(new Rect(Screen.width - 380f, Screen.height - 90f, 360f, 70f),
-                "CP99 Online " + Latest + " downloaded.\nRestart the game to use it.", style);
+                "UltraPuck " + Latest + " downloaded.\nRestart the game to use it.", style);
         }
 
         private static void Fail(string message)

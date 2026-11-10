@@ -274,14 +274,30 @@ namespace CP99Online
 
             for (var i = 0; i < 6; i++) nav.MoveDownList();     // Mods
             yield return new WaitForSeconds(0.5f); Shot(dir, "m5_main_mods_selected"); yield return new WaitForSeconds(2f);
+            var fpsBefore = Plugin.FrameRateLimit.Value;
+            var overlay = UltraPuck.ModManager.Get("example.statsoverlay");
+            var overlayBefore = overlay != null && overlay.Enabled;
             nav.NextMenu();
-            yield return new WaitForSeconds(1.5f); Shot(dir, "m6_mods"); yield return new WaitForSeconds(2f);
-            nav.NextMenu();                                      // toggle No Boost Slowdown in place
-            yield return new WaitForSeconds(1f); Shot(dir, "m7_boost_toggled"); yield return new WaitForSeconds(2f);
+            yield return new WaitForSeconds(1.5f); Shot(dir, "m6_mods_list"); yield return new WaitForSeconds(2f);
+            nav.NextMenu();                                      // open FPS+ page
+            yield return new WaitForSeconds(1.5f); Shot(dir, "m7_fps_page"); yield return new WaitForSeconds(2f);
             nav.MoveDownList(); nav.NextMenu();                  // cycle FPS limit
             yield return new WaitForSeconds(1f); Shot(dir, "m8_fps_cycled"); yield return new WaitForSeconds(2f);
+            nav.MoveUpList(); nav.NextMenu();                    // FPS+ off
+            yield return new WaitForSeconds(1f); Shot(dir, "m9_fps_off"); NetLog.Info("MENUTEST targetFrameRate=" + Application.targetFrameRate); yield return new WaitForSeconds(2f);
+            nav.NextMenu();                                      // FPS+ back on
+            yield return new WaitForSeconds(1f);
+            nav.PreviousMenu();                                  // B: back to the list, not the main menu
+            yield return new WaitForSeconds(1.5f); Shot(dir, "m10_back_to_list"); yield return new WaitForSeconds(2f);
+            nav.MoveDownList(); nav.MoveDownList(); nav.NextMenu(); // third mod's page
+            yield return new WaitForSeconds(1.5f); Shot(dir, "m11_third_page"); yield return new WaitForSeconds(2f);
+            nav.NextMenu();                                      // toggle it
+            yield return new WaitForSeconds(1.5f); Shot(dir, "m12_third_toggled"); yield return new WaitForSeconds(2f);
+            nav.PreviousMenu(); yield return new WaitForSeconds(1f);
             nav.PreviousMenu(); yield return new WaitForSeconds(1.5f);
-            Shot(dir, "m9_back_main"); yield return new WaitForSeconds(2f);
+            Shot(dir, "m13_back_main"); yield return new WaitForSeconds(2f);
+            Plugin.FrameRateLimit.Value = fpsBefore;
+            if (overlay != null) UltraPuck.ModManager.SetEnabled(overlay, overlayBefore);
             NetLog.Info("MENUTEST done");
         }
 

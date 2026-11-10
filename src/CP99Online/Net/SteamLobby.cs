@@ -8,7 +8,7 @@ namespace CP99Online.Net
 {
     /// <summary>
     /// Steam lobbies are only used for discovery and invites; gameplay goes over Steam P2P to the
-    /// lobby owner. Lobbies are tagged so only CP99 Online lobbies show up in the browser.
+    /// lobby owner. Lobbies are tagged so only UltraPuck lobbies show up in the browser.
     /// </summary>
     internal static class SteamLobby
     {

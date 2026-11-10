@@ -1,6 +1,6 @@
-# Builds dist\CP99Online-<version>.zip:
-#   CP99Online-<version>\
-#     Install CP99 Online.bat, Uninstall CP99 Online.bat, README.txt
+# Builds dist\UltraPuck-<version>.zip:
+#   UltraPuck-<version>\
+#     Install UltraPuck.bat, Uninstall UltraPuck.bat, README.txt
 #     installer\cp99-setup.ps1, installer\version.txt
 #     files\...  (payload copied into the game folder: BepInEx x86 + config + the plugin)
 # Payload comes from dist\payload, with the plugin DLL taken fresh from the Release build.
@@ -11,7 +11,7 @@ $plugin = Join-Path $root 'src\CP99Online\bin\Release\CP99Online.dll'
 $version = [regex]::Match((Get-Content -LiteralPath (Join-Path $root 'src\CP99Online\Plugin.cs') -Raw), 'Version\s*=\s*"([^"]+)"').Groups[1].Value
 if (-not $version) { throw 'Version not found in Plugin.cs' }
 
-$name  = "CP99Online-$version"
+$name  = "UltraPuck-$version"
 $stage = Join-Path $dist "build\$name"
 if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
 New-Item -ItemType Directory -Force -Path "$stage\installer" | Out-Null
@@ -30,7 +30,7 @@ foreach ($f in $lf.Keys) {
 }
 
 # .bat and .txt files get Windows line endings.
-foreach ($f in 'Install CP99 Online.bat', 'Uninstall CP99 Online.bat', 'README.txt') {
+foreach ($f in 'Install UltraPuck.bat', 'Uninstall UltraPuck.bat', 'README.txt') {
     $text = (Get-Content -LiteralPath (Join-Path $dist "installer\$f") -Raw) -replace "`r`n", "`n" -replace "`n", "`r`n"
     $text = $text.Replace('{VERSION}', $version)
     [IO.File]::WriteAllText((Join-Path $stage $f), $text, (New-Object Text.ASCIIEncoding))

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CP99 Online installer / uninstaller for ClusterPuck 99 on Linux and Steam Deck (runs through Proton).
+# UltraPuck installer / uninstaller for ClusterPuck 99 on Linux and Steam Deck (runs through Proton).
 #   bash install-linux.sh            install or update
 #   bash uninstall-linux.sh          remove and restore replaced files
 # Optional: pass the game folder as the last argument to skip auto-detection.
@@ -95,9 +95,9 @@ install_mod() {
   local backup="$GAME/CP99Online-backup"
   local files_list="$backup/files.txt" backed_list="$backup/backedup.txt"
   if [ -f "$backup/version.txt" ]; then
-    say "Updating CP99 Online $(cat "$backup/version.txt") -> $version"
+    say "Updating UltraPuck $(cat "$backup/version.txt") -> $version"
   else
-    say "Installing CP99 Online $version"
+    say "Installing UltraPuck $version"
     mkdir -p "$backup" || fail "Can't write to the game folder: $GAME"
     if [ -d "$GAME/BepInEx" ]; then echo 1 > "$backup/had_bepinex"; else echo 0 > "$backup/had_bepinex"; fi
     : > "$files_list"; : > "$backed_list"
@@ -146,7 +146,7 @@ uninstall_mod() {
     return
   fi
 
-  say "Uninstalling CP99 Online $(cat "$backup/version.txt" 2>/dev/null)"
+  say "Uninstalling UltraPuck $(cat "$backup/version.txt" 2>/dev/null)"
   local other_plugins=0
   if [ -d "$GAME/BepInEx/plugins" ] && ls -A "$GAME/BepInEx/plugins" | grep -vxq 'CP99Online'; then other_plugins=1; fi
 
@@ -157,7 +157,7 @@ uninstall_mod() {
     remove_empty_dirs "$GAME" "$(dirname "$GAME/$rel")"
   done < "$backup/files.txt"
   rm -rf "$GAME/BepInEx/plugins/CP99Online"
-  rm -f "$GAME/BepInEx/config/cp99.online.cfg"
+  rm -f "$GAME/BepInEx/config/cp99.online.cfg" "$GAME/BepInEx/config/ultrapuck.mods.cfg"
 
   while IFS= read -r rel; do
     [ -n "$rel" ] || continue
@@ -175,13 +175,13 @@ uninstall_mod() {
   rm -rf "$backup"
 
   say ''
-  ok 'CP99 Online was removed.'
+  ok 'UltraPuck was removed.'
   say 'Also clear the Launch Options in Steam (right-click ClusterPuck 99 > Properties > General).'
 }
 
 # ---------------------------------------------------------------- main
 
-say "CP99 Online - $MODE (Linux / Steam Deck)"
+say "UltraPuck - $MODE (Linux / Steam Deck)"
 say ''
 if [ -z "$GAME" ]; then
   GAME="$(find_game)" || fail "Couldn't find ClusterPuck 99 in your Steam libraries.

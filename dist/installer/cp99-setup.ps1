@@ -1,5 +1,5 @@
-# CP99 Online installer / uninstaller for ClusterPuck 99.
-# Run through "Install CP99 Online.bat" or "Uninstall CP99 Online.bat".
+# UltraPuck installer / uninstaller for ClusterPuck 99.
+# Run through "Install UltraPuck.bat" or "Uninstall UltraPuck.bat".
 #
 # Install:   finds the game through Steam, backs up any file it would replace into
 #            <game>\CP99Online-backup, then copies the mod files from ..\files.
@@ -124,10 +124,10 @@ function Install-Mod($game) {
     $stateFile = Join-Path $backupDir 'install-state.json'
     $state = Read-State $stateFile
     if ($state) {
-        Say "Updating CP99 Online $($state.Version) -> $version"
+        Say "Updating UltraPuck $($state.Version) -> $version"
     } else {
         $state = @{ Version = $version; HadBepInEx = (Test-Path -LiteralPath (Join-Path $game 'BepInEx')); Files = @(); BackedUp = @() }
-        Say "Installing CP99 Online $version"
+        Say "Installing UltraPuck $version"
     }
     New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
 
@@ -185,7 +185,7 @@ function Uninstall-Mod($game) {
         return
     }
 
-    Say "Uninstalling CP99 Online $($state.Version)"
+    Say "Uninstalling UltraPuck $($state.Version)"
     $plugins = Join-Path $game 'BepInEx\plugins'
     $otherPlugins = (Test-Path -LiteralPath $plugins) -and
         (Get-ChildItem -LiteralPath $plugins -Force | Where-Object { $_.Name -ne 'CP99Online' })
@@ -198,6 +198,8 @@ function Uninstall-Mod($game) {
     $plug = Join-Path $game 'BepInEx\plugins\CP99Online'   # also holds the mod's logs
     if (Test-Path -LiteralPath $plug) { Remove-Item -LiteralPath $plug -Recurse -Force }
     $cfg = Join-Path $game 'BepInEx\config\cp99.online.cfg'
+    if (Test-Path -LiteralPath $cfg) { Remove-Item -LiteralPath $cfg -Force }
+    $cfg = Join-Path $game 'BepInEx\config\ultrapuck.mods.cfg'
     if (Test-Path -LiteralPath $cfg) { Remove-Item -LiteralPath $cfg -Force }
 
     foreach ($rel in $state.BackedUp) {
@@ -219,13 +221,13 @@ function Uninstall-Mod($game) {
     Remove-Item -LiteralPath $backupDir -Recurse -Force
 
     Say ''
-    Say 'CP99 Online was removed. The game is back to how it was before the install.' 'Green'
+    Say 'UltraPuck was removed. The game is back to how it was before the install.' 'Green'
 }
 
 # ----------------------------------------------------------------------------- main
 
 try {
-    Say "CP99 Online - $Mode" 'Cyan'
+    Say "UltraPuck - $Mode" 'Cyan'
     Say ''
     $game = $GameDir
     if (-not $game) { $game = Find-Game }
