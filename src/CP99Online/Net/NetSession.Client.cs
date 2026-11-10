@@ -138,6 +138,22 @@ namespace CP99Online.Net
                         Lobby.Add(new LobbyEntry { Id = r.U8(), Name = r.Str(), Team = r.U8() });
                     break;
                 }
+                case Msg.BoxAssign:
+                    ClientHandleBoxAssign(r);
+                    break;
+                case Msg.BoxTable:
+                    ClientHandleBoxTable(r);
+                    break;
+                case Msg.Scene:
+                    ClientHandleScene(r);
+                    break;
+                case Msg.Nav:
+                    _navMenu = r.Str();
+                    _navElement = r.Str();
+                    _navGoals = r.I32();
+                    _navLength = r.F32();
+                    _hasNav = true;
+                    break;
                 case Msg.StartMatch:
                     ClientStartMatch(r);
                     break;
@@ -190,7 +206,7 @@ namespace CP99Online.Net
                 var symbol = r.U8();
                 var owner = r.U8();
                 var mine = owner == _myId;
-                var p = new PlayerData(ai, 0, mine ? Plugin.LocalJoystick() : 0, team)
+                var p = new PlayerData(ai, 0, mine ? MatchJoystick : 0, team)
                 {
                     teamColor = (TeamColor)color,
                     account = new Account(name, ai, symbol)
@@ -288,6 +304,7 @@ namespace CP99Online.Net
             if (!_conns.TryGetValue(0, out c)) return;
             if (!Welcomed && Now - _connectStarted > Proto.Timeout) { Stop("Couldn't reach the host"); return; }
             if (Welcomed && Now - c.LastHeard > Proto.Timeout) { Stop("Lost connection to the host"); return; }
+            LobbyClientUpdate();
 
             var gm = Globals.gameManager;
             if (Match.Active && gm != null && _clientHold) gm.startCountdown = 3.01f;

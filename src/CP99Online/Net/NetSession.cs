@@ -69,6 +69,8 @@ namespace CP99Online.Net
         {
             var scene = Application.loadedLevelName;
             NetLog.Debug("Scene loaded: " + scene);
+            if (Role == Role.Host) HostOnSceneLoaded(scene);
+            else if (Role == Role.Client) ClientOnSceneLoaded(scene);
             if (scene != "Arena3D" && (Match.Active || Match.ClientPending))
             {
                 NetLog.Info("Left the match scene");

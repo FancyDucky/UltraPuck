@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using CP99Online.Net;
 using UnityEngine;
@@ -45,11 +46,7 @@ namespace CP99Online
                 else s.JoinDirect("127.0.0.1", _port);
             }
 
-            if (_role == "host" && !_matchStarted && s.ClientCount > 0 && t > 25f && ProfileManager.Instance != null)
-            {
-                _matchStarted = true;
-                StartTestMatch();
-            }
+            LobbyStep(s, t);
 
             if (Match.Active && t > _nextLog)
             {
@@ -58,26 +55,153 @@ namespace CP99Online
             }
         }
 
-        private static void StartTestMatch()
+        // ---- shared player selection walkthrough
+        private int _step;
+        private float _stepAt;
+
+        private void Next(float t, string what) { _step++; _stepAt = t; NetLog.Info("TEST step " + _step + ": " + what); }
+
+        private void LobbyStep(NetSession s, float t)
         {
-            var host = new PlayerData(false, 0, 0, 0) { teamColor = ColorManager.team1Color, account = new Account("HOSTPLAYER", false, 0) };
-            var ai = new PlayerData(true, 0, -1, 1) { teamColor = ColorManager.team2Color, account = new Account("BOT", true, 0) };
-            PlayerSelectionManager_V2.players = new List<PlayerData> { host, ai };
+            var scene = Application.loadedLevelName;
+            if (_role == "host")
+            {
+                if (_step == 0 && s.ClientCount > 0 && scene == "MainMenu" && t > 25f && ProfileManager.Instance != null)
+                {
+                    Application.LoadLevel("PlayerSelection");
+                    Next(t, "host opens player selection");
+                }
+                else if (_step == 1 && NetSession.InPlayerSelection && t - _stepAt > 4f)
+                {
+                    SignInLocal(MenuGlobals.menuManager.playerSelectionManager_V2, 0, "HOSTPLAYER", 1, 0);
+                    Next(t, "host player signed in on team 1");
+                }
+                else if (_step == 2 && t - _stepAt > 1f && s.Clients.Any(c => c.BoxSlot >= 0 && c.BoxTeam == 1 &&
+                         c.BoxStateValue == (int)PlayerBox_V2.PlayerBoxState.SIGNEDIN))
+                {
+                    var o = MenuGlobals.menuManager.playerSelectionOptions_Manager;
+                    o.numTeam0AIScroller.Scroll(1);
+                    Next(t, "client is on team 2; host adds a bot to team 1 (screenshot time)");
+                }
+                else if (_step == 3 && t - _stepAt > 6f)
+                {
+                    MenuGlobals.menuManager.playerSelectionOptions_Manager.optionsOpened = true;
+                    Next(t, "host opens the options panel");
+                }
+                else if (_step == 4 && t - _stepAt > 3f)
+                {
+                    var o = MenuGlobals.menuManager.playerSelectionOptions_Manager;
+                    o.ConfirmPlayers();
+                    NetLog.Info("TEST players: " + string.Join(", ", PlayerSelectionManager_V2.players.Select(p =>
+                        p.account.name + "/team" + p.team + "/joy" + p.joystickNum + "/" + p.joystickId).ToArray()));
+                    o.GoToLevelSelection();
+                    Next(t, "host confirms players -> GameSelection");
+                }
+                else if (_step == 5 && scene == "GameSelection" && t - _stepAt > 5f)
+                {
+                    NumGoalsToWinManager.numGoalsToWin = 3;
+                    GameTimerManager.gameLength = 60f;
+                    var nav = MenuGlobals.menuManager.menuNavigator;
+                    nav.MoveDownList(); nav.MoveDownList();
+                    Next(t, "host highlights arena 3 (" + NavText() + "), goals 3, 1:00");
+                }
+                else if (_step >= 6 && _step < 25 && scene == "GameSelection" && t - _stepAt > 4f)
+                {
+                    var nav = MenuGlobals.menuManager.menuNavigator;
+                    if (nav.selectedMenu != null && nav.selectedMenu.name == "GameMode" && GameModeManager.gameMode != GameModeManager.GameMode.SCORE)
+                    {
+                        nav.MoveDownList();
+                        Next(t, "host moves to " + NavText() + " mode=" + GameModeManager.gameMode);
+                        return;
+                    }
+                    nav.NextMenu();
+                    Next(t, "host presses A -> " + NavText());
+                }
+                else if (_step >= 6 && _step < 30 && scene == "MatchOver" && t - _stepAt > 8f)
+                {
+                    _step = 30;
+                    Application.LoadLevel("PlayerSelection");
+                    Next(t, "host leaves results for player selection");
+                }
+                else if (_step == 31 && NetSession.InPlayerSelection && t - _stepAt > 3f)
+                {
+                    NetLog.Info("TEST host boxes after match: " + Boxes());
+                    Next(t, "checked boxes");
+                }
+            }
+            else
+            {
+                if (_step == 0 && NetSession.InPlayerSelection)
+                    Next(t, "client followed the host to player selection");
+                else if (_step == 1 && t - _stepAt > 6f)
+                {
+                    MenuGlobals.menuManager.playerSelectionManager_V2.SignInPlayer(0); // goes to the host as a box request
+                    Next(t, "client presses join");
+                }
+                else if (_step == 2)
+                {
+                    var mgr = MenuGlobals.menuManager.playerSelectionManager_V2;
+                    var mine = mgr.playerBoxes.FirstOrDefault(b => b.boxActive && !NetSession.IsNetBox(b));
+                    if (mine != null && t - _stepAt > 1f)
+                    {
+                        mine.playerAccount = new Account("CLIENTPLAYER", false, 3);
+                        mine.ChangeStateTo(PlayerBox_V2.PlayerBoxState.SIGNEDIN);
+                        mine.ChangeTeamsTo(1);
+                        Next(t, "client got box " + (Array.IndexOf(mgr.playerBoxes, mine) + 1) + ", picked a profile and team 2");
+                    }
+                }
+                else if (_step == 3 && scene == "GameSelection")
+                    Next(t, "client followed the host to GameSelection");
+                else if (_step == 4 && scene == "GameSelection" && t - _stepAt > 2f)
+                {
+                    _stepAt = t;
+                    NetLog.Info("TEST client shows " + NavText() + " goals=" + NumGoalsToWinManager.numGoalsToWin + " length=" + GameTimerManager.gameLength);
+                }
+                else if (_step == 4 && scene == "PlayerSelection" && NetSession.InPlayerSelection)
+                    Next(t, "client back in player selection");
+                else if (_step == 5 && t - _stepAt > 5f)
+                {
+                    NetLog.Info("TEST client boxes after match: " + Boxes());
+                    Next(t, "checked boxes");
+                }
+            }
+        }
+
+        private static string NavText()
+        {
+            var nav = MenuGlobals.menuManager.menuNavigator;
+            var tm = nav.selectedElement != null ? nav.selectedElement.GetComponent<TextMesh>() : null;
+            return (nav.selectedMenu != null ? nav.selectedMenu.name : "-") + " / \"" + (tm != null ? tm.text : "?") + "\"";
+        }
+
+        private static string Boxes()
+        {
+            return string.Join(" | ", MenuGlobals.menuManager.playerSelectionManager_V2.playerBoxes.Where(b => b.boxActive).Select(b =>
+                (b.playerAccount != null ? b.playerAccount.name : "?") + " team" + b.currentTeam + " " + b.currentState + (NetSession.IsNetBox(b) ? " (remote)" : " (local)")).ToArray());
+        }
+
+        private static void SignInLocal(PlayerSelectionManager_V2 mgr, int controller, string name, int symbol, int team)
+        {
+            mgr.SignInPlayer(controller);
+            var box = mgr.playerBoxes.First(b => b.boxActive && b.controllerNumber == controller);
+            box.playerAccount = new Account(name, false, symbol);
+            box.ChangeStateTo(PlayerBox_V2.PlayerBoxState.SIGNEDIN);
+            box.ChangeTeamsTo(team);
+        }
+
+        private static void SetupTestArena()
+        {
             ArenaManager.arenaName = "0001_Boring";
             ArenaManager.noSpikes = false;
             GameModeManager.gameMode = GameModeManager.GameMode.SCORE;
             NumGoalsToWinManager.numGoalsToWin = 3;
             ChallengeManager.isInChallenge = false;
-            ChallengeManager.currentChallenge = new Challenge(Challenge.ChallengeType.SPARKLETEAM, string.Empty, string.Empty,
-                string.Empty, string.Empty, string.Empty, Challenge.ScoreType.HIGHSCORE, new int[3], Challenge.ChallengeType.SPARKLETEAM);
             ChallengeMatch_Manager.challengeMatch = false;
             ArenaCreatorManager.comingFromArenaCreator = false;
             AIDifficultyManager.skill_shooting = new[] { 2, 2 };
             AIDifficultyManager.skill_aggression = new[] { 2, 2 };
             AIDifficultyManager.skill_agility = new[] { 2, 2 };
             AIDifficultyManager.skill_goaltending = new[] { 2, 2 };
-            NetLog.Info("TEST: host starting match");
-            Application.LoadLevel("Arena3D");
         }
 
         private static void LogWorld()

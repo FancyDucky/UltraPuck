@@ -15,6 +15,13 @@ namespace CP99Online.Net
             public int Team;
             public bool Loaded;
             public readonly NetInput.Remote Input = new NetInput.Remote();
+            // shared player selection
+            public int BoxSlot = -1;
+            public int BoxStateValue;
+            public int BoxTeam = -1;
+            public string BoxName;
+            public int BoxSymbol;
+            public bool InLastMatch;
         }
 
         private sealed class Shadow
@@ -148,8 +155,15 @@ namespace CP99Online.Net
                     c.SendReliable(_msg, Now);
                     NetLog.Info(name + " joined (client " + ci.Id + ", team " + (team + 1) + ")");
                     BroadcastLobby();
+                    HostSendSceneTo(ci);
                     break;
                 }
+                case Msg.BoxReq:
+                    if (ci != null) HostHandleBoxRequest(ci, r.U8());
+                    break;
+                case Msg.BoxState:
+                    if (ci != null) HostHandleBoxState(ci, r);
+                    break;
                 case Msg.SetTeam:
                     if (ci != null) { ci.Team = r.U8() > 0 ? 1 : 0; BroadcastLobby(); }
                     break;
@@ -196,6 +210,7 @@ namespace CP99Online.Net
             ClientInfo ci;
             if (_clients.TryGetValue(peer, out ci))
             {
+                FreeBox(ci);
                 _clients.Remove(peer);
                 if (Match.Owners != null)
                     for (var s = 0; s < Match.Owners.Count; s++)
@@ -231,6 +246,7 @@ namespace CP99Online.Net
 
         private void HostUpdate()
         {
+            LobbyHostUpdate();
             List<int> dead = null;
             foreach (var c in _conns.Values)
                 if (Now - c.LastHeard > Proto.Timeout) (dead ?? (dead = new List<int>())).Add(c.PeerId);
@@ -354,21 +370,24 @@ namespace CP99Online.Net
                 return;
             }
 
+            // Online players come from the shared player selection: boxes owned by clients carry
+            // joystickId "NET:<client id>". They play on keyboard-style input names, which
+            // HostOnSpawned then points at the network.
             var owners = new List<byte>();
-            for (var i = 0; i < players.Count; i++) owners.Add(0);
-            foreach (var ci in Clients)
+            foreach (var c in _clients.Values) c.InLastMatch = false;
+            for (var i = 0; i < players.Count; i++)
             {
-                if (players.Count >= 10) { NetLog.Warn("10 player limit reached; " + ci.Name + " will spectate"); continue; }
-                var p = new PlayerData(false, 0, 0, ci.Team)
-                {
-                    teamColor = ci.Team == 0 ? ColorManager.team1Color : ColorManager.team2Color,
-                    account = new Account(ci.Name, false, 0)
-                };
-                players.Add(p);
-                Match.OnlinePlayers.Add(p);
+                var owner = OwnerFromId(players[i].joystickId);
+                var ci = owner > 0 ? _clients.Values.FirstOrDefault(c => c.Id == owner) : null;
+                if (ci == null) { owners.Add(0); continue; }
+                players[i].joystickNum = 0;
+                Match.OnlinePlayers.Add(players[i]);
                 owners.Add(ci.Id);
                 ci.Loaded = false;
+                ci.InLastMatch = true;
             }
+            foreach (var c in _clients.Values)
+                if (!c.InLastMatch) { c.Loaded = true; NetLog.Info(c.Name + " has no player this match and will watch"); }
 
             Match.Id = ++_matchCounter;
             Match.Players = players;

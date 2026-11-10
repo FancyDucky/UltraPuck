@@ -19,6 +19,12 @@ namespace CP99Online.Net
         SuddenDeath,    // h->c
         TimeUp,         // h->c
         MatchEnd,       // h->c  final stats
+        BoxReq,         // c->h  u8 controller: give me a player box
+        BoxAssign,      // h->c  u8 slot, bool restore
+        BoxState,       // c->h  u8 slot, u8 state, u8 team+1, str name, u8 symbol
+        BoxTable,       // h->c  8 x {u8 owner, u8 state, u8 team+1, str name, u8 symbol}, options
+        Scene,          // h->c  str menu scene to be in
+        Nav,            // h->c  str menu path, str element path, i32 goals, f32 game length (GameSelection)
     }
 
     internal enum Ev : byte
@@ -36,7 +42,7 @@ namespace CP99Online.Net
 
     internal static class Proto
     {
-        public const ushort Version = 1;
+        public const ushort Version = 2;
         public const int MaxClients = 7;
         public const float Timeout = 10f;
         public const float SendRate = 1f / 60f;

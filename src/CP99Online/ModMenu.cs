@@ -36,11 +36,6 @@ namespace CP99Online
         {
             _portText = Plugin.Port.Value.ToString();
             if (Plugin.OpenMenuOnStart.Value) SetOpen(true);
-            if (!string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("CP99_TEST")))
-            {
-                _tab = 1; // local test runs: show the Online tab for screenshots
-                SetOpen(true);
-            }
         }
 
         private const float HoldToOpen = 0.8f;
@@ -262,8 +257,8 @@ namespace CP99Online
                     ". Forward that port on your router, or use Steam hosting instead.", _dim);
             }
             if (s.WaitingForClients) GUILayout.Label("Waiting for everyone to load the arena...", _dim);
-            GUILayout.Label("Start a match the normal way (Play, pick your local players, choose an arena). " +
-                "Online players are added to their teams automatically.", _dim);
+            GUILayout.Label("Go to player select (Play Match or Play Online > Go to Player Select). Everyone appears there: " +
+                "friends join a box with A, pick their profile and team, then you press Start and choose the arena.", _dim);
             if (GUILayout.Button("Stop hosting")) s.Stop("Stopped hosting");
         }
 

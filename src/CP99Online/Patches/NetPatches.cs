@@ -36,22 +36,6 @@ namespace CP99Online.Patches
         }
     }
 
-    /// <summary>Removes online players from the local player list when going back to player selection.</summary>
-    [HarmonyPatch(typeof(PlayerSelectionManager_V2), "Start")]
-    internal static class PlayerSelectionStartPatch
-    {
-        private static void Prefix()
-        {
-            var players = PlayerSelectionManager_V2.players;
-            if (players == null || Match.OnlinePlayers.Count == 0) return;
-            if (NetSession.IsClient || players.TrueForAll(p => Match.OnlinePlayers.Contains(p)))
-                PlayerSelectionManager_V2.players = null;
-            else
-                players.RemoveAll(p => Match.OnlinePlayers.Contains(p));
-            Match.OnlinePlayers.Clear();
-        }
-    }
-
     // ------------------------------------------------------------------ host: remote input
 
     [HarmonyPatch(typeof(BallInput), "Update")]

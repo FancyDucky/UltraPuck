@@ -127,21 +127,21 @@ namespace CP99Online
                     break;
 
                 case Role.Host:
-                    items.Add(Item.Action(() => "Start Match", () => Application.LoadLevel("PlayerSelection")));
+                    items.Add(Item.Action(() => "Go to Player Select", () => Application.LoadLevel("PlayerSelection")));
                     if (s.TransportName == "Steam") items.Add(Item.Action(() => "Invite Friends", SteamLobby.InviteFriends));
                     items.Add(Item.Action(() => "Stop Hosting", () => s.Stop("Stopped hosting")));
                     items.Add(Item.Action(() => "More Options (F8)", () => ModMenu.Show(1)));
                     items.Add(Item.Info(() => s.ClientCount == 0
                         ? "Waiting for friends to join..."
                         : "Joined: " + string.Join(", ", s.Clients.Select(c => c.Name + " (Team " + (c.Team + 1) + ")").ToArray())));
-                    items.Add(Item.Info(() => "Start Match, then pick players and an arena."));
+                    items.Add(Item.Info(() => "Everyone joins on the player select screen."));
                     break;
 
                 case Role.Client:
                     if (s.Welcomed) items.Add(TeamItem(s));
                     items.Add(Item.Action(() => "Leave Game", () => s.Stop("You left")));
                     items.Add(Item.Info(() => s.Welcomed
-                        ? "In " + (string.IsNullOrEmpty(s.HostName) ? "the host" : s.HostName) + "'s game. Waiting for the host to start."
+                        ? "In " + (string.IsNullOrEmpty(s.HostName) ? "the host" : s.HostName) + "'s game. You'll follow the host to player select."
                         : s.Status));
                     items.Add(Item.Info(() => s.Welcomed
                         ? string.Join(", ", s.Lobby.Select(e => e.Name).ToArray())

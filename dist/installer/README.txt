@@ -21,11 +21,13 @@ INSTALL ON LINUX / STEAM DECK (the game runs through Proton)
 
 PLAY ONLINE
   Everyone needs this mod, and the same version.
-  Host:  Main menu > Play Online > Host Game, then Invite Friends.
-         Then Start Match, pick your own players and a built-in arena.
-         Online players join their teams automatically.
+  Host:  Main menu > Play Online > Host Game, then Invite Friends, then Go to Player Select.
   Join:  Accept the Steam invite, or Main menu > Play Online > Join a Friend.
-         Team and Controls (keyboard or gamepad) are on the same screen.
+         You follow the host to the player select screen automatically.
+  Then everyone presses A to join a box, picks their own profile and moves up/down to pick a
+  team, just like local multiplayer. The host presses Start and picks the arena and mode while
+  everyone watches. After the match everyone returns to player select together.
+  One player per PC online; the host can also add couch players and AI bots.
   Mods:  Main menu > Mods (boost slowdown, FPS limit). F8 (or hold View/Back on a controller)
          opens the overlay menu with extra options such as direct IP.
   "Host direct IP" also works but needs UDP port 27099 forwarded on the host's router.
