@@ -121,7 +121,6 @@ namespace CP99Online
                         items.Add(Item.Action(() => "Host Game (Direct IP)", () => s.StartHostDirect(Plugin.Port.Value, null)));
                     }
                     if (!SteamLobby.Available) items.Add(Item.Info(() => "Launch through Steam to host or join friends."));
-                    items.Add(Item.Info(() => "Pick your profile and team on the player select screen."));
                     break;
 
                 case Role.Host:
@@ -131,7 +130,6 @@ namespace CP99Online
                     items.Add(Item.Info(() => s.ClientCount == 0
                         ? "Waiting for friends to join..."
                         : "Joined: " + string.Join(", ", s.Clients.Select(c => c.Name).ToArray())));
-                    items.Add(Item.Info(() => "Everyone joins on the player select screen."));
                     break;
 
                 case Role.Client:
@@ -250,7 +248,7 @@ namespace CP99Online
             try
             {
                 System.IO.Directory.CreateDirectory(ModManager.ModsFolder);
-                Application.OpenURL("file:///" + ModManager.ModsFolder.Replace('\\', '/'));
+                Application.OpenURL(new Uri(ModManager.ModsFolder).AbsoluteUri); // file:///C:/... or file:///Users/...
             }
             catch (Exception ex) { NetLog.Warn("Open Mods folder: " + ex.Message); }
         }

@@ -17,3 +17,4 @@ Thumbs.db
 
 # Plugin DLL in the payload is replaced by a fresh build in make-dist.ps1
 dist/payload/BepInEx/plugins/
+dist/payload-mac/BepInEx/plugins/

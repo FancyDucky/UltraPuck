@@ -2,7 +2,8 @@
 #   UltraPuck-<version>\
 #     Install UltraPuck.bat, Uninstall UltraPuck.bat, README.txt
 #     installer\cp99-setup.ps1, installer\version.txt
-#     files\...  (payload copied into the game folder: BepInEx x86 + config + the plugin)
+#     files\...      (Windows / Proton payload: BepInEx x86 + config + the plugin)
+#     files-mac\...  (native Mac payload: BepInEx macOS + run_bepinex.sh + config + the plugin)
 # Payload comes from dist\payload, with the plugin DLL taken fresh from the Release build.
 $ErrorActionPreference = 'Stop'
 $dist = $PSScriptRoot
@@ -19,11 +20,17 @@ New-Item -ItemType Directory -Force -Path "$stage\installer" | Out-Null
 Copy-Item -LiteralPath (Join-Path $dist 'payload') -Destination "$stage\files" -Recurse
 New-Item -ItemType Directory -Force -Path "$stage\files\BepInEx\plugins\CP99Online" | Out-Null
 Copy-Item -LiteralPath $plugin -Destination "$stage\files\BepInEx\plugins\CP99Online\CP99Online.dll" -Force
+# Mac: same config and plugin, Mac loader.
+Copy-Item -LiteralPath (Join-Path $dist 'payload-mac') -Destination "$stage\files-mac" -Recurse
+New-Item -ItemType Directory -Force -Path "$stage\files-mac\BepInEx\config", "$stage\files-mac\BepInEx\plugins\CP99Online" | Out-Null
+Copy-Item -LiteralPath (Join-Path $dist 'payload\BepInEx\config\BepInEx.cfg') -Destination "$stage\files-mac\BepInEx\config\"
+Copy-Item -LiteralPath $plugin -Destination "$stage\files-mac\BepInEx\plugins\CP99Online\CP99Online.dll" -Force
 Copy-Item -LiteralPath (Join-Path $dist 'installer\cp99-setup.ps1') -Destination "$stage\installer\"
 Set-Content -LiteralPath "$stage\installer\version.txt" -Value $version -Encoding ASCII
 
-# Linux scripts must keep Unix line endings.
-$lf = @{ 'install-linux.sh' = $stage; 'uninstall-linux.sh' = $stage; 'cp99-setup.sh' = "$stage\installer" }
+# Linux and Mac scripts must keep Unix line endings.
+$lf = @{ 'install-linux.sh' = $stage; 'uninstall-linux.sh' = $stage; 'cp99-setup.sh' = "$stage\installer";
+         'install-mac.sh' = $stage; 'uninstall-mac.sh' = $stage; 'cp99-setup-mac.sh' = "$stage\installer" }
 foreach ($f in $lf.Keys) {
     $text = (Get-Content -LiteralPath (Join-Path $dist "installer\$f") -Raw) -replace "`r`n", "`n"
     [IO.File]::WriteAllText((Join-Path $lf[$f] $f), $text, (New-Object Text.ASCIIEncoding))

@@ -12,7 +12,7 @@ A mod for [ClusterPuck 99](https://store.steampowered.com/app/337960/) that adds
 - **Play Online** and **Mods** entries in the game's own main menu (keyboard and controller).
 - **Overlay menu** for extras like direct IP — F8, or hold View/Back on a controller.
 - **Auto-update** from this repo's GitHub Releases (on by default; Main menu > Mods > Auto Update).
-- Windows, Linux and Steam Deck (via Proton).
+- Windows, Linux and Steam Deck (via Proton), and Mac (native, new).
 
 ## Install
 
@@ -21,6 +21,8 @@ Download the latest `UltraPuck-<version>.zip` from [Releases](../../releases), e
 - **Windows:** double-click `Install UltraPuck.bat`.
 - **Linux / Steam Deck:** in a terminal in the extracted folder run `bash install-linux.sh`, then set the game's
   Steam launch options to `WINEDLLOVERRIDES="winhttp=n,b" %command%`.
+- **Mac:** in Terminal run `bash install-mac.sh` from the extracted folder, then paste the launch options line it
+  copies for you (`"<game folder>/run_bepinex.sh" %command%`) into the game's Steam Launch Options.
 
 Everyone playing together needs the mod. See `README.txt` in the zip for hosting/joining steps.
 
@@ -51,6 +53,8 @@ Layout:
 - `docs/MAKING-MODS.md` — guide for mod makers.
 - `dist/installer` — Windows/Linux install & uninstall scripts.
 - `dist/payload` — BepInEx 5.4.23.5 (x86) set up for this game (Camera entrypoint), shipped inside the zip.
+- `dist/payload-mac` — BepInEx 5.4.23.5 for macOS (universal `libdoorstop.dylib` + `run_bepinex.sh`); the zip adds
+  the same config and plugin.
 
 Built on [BepInEx](https://github.com/BepInEx/BepInEx) (LGPL-2.1) and [HarmonyX](https://github.com/BepInEx/HarmonyX) (MIT).
 Not affiliated with the developers of ClusterPuck 99.

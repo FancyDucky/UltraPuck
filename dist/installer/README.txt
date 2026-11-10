@@ -19,6 +19,18 @@ INSTALL ON LINUX / STEAM DECK (the game runs through Proton)
   force a Proton version, let Steam update the game, and run the installer again.
   Uninstall: bash uninstall-linux.sh, then clear the Launch Options.
 
+INSTALL ON MAC (native Mac version of the game; new and not yet tested on a real Mac)
+  1. Double-click the zip to extract it.
+  2. Open Terminal (Applications > Utilities), type  bash  and a space, drag install-mac.sh
+     from the extracted folder into the window, and press Return.
+  3. The installer copies a Steam Launch Options line for you. In Steam: right-click
+     ClusterPuck 99 > Properties > General > Launch Options, and press Command+V.
+     (It looks like:  "/Users/you/Library/Application Support/Steam/steamapps/common/ClusterPuck 99/run_bepinex.sh" %command%)
+  4. Launch ClusterPuck 99 from Steam. The main menu now has Play Online and Mods.
+  Uninstall: same steps with uninstall-mac.sh, then clear the Launch Options.
+  If it doesn't load, send the file BepInEx/LogOutput.log from the game folder
+  (Steam: right-click the game > Manage > Browse local files).
+
 PLAY ONLINE
   Everyone needs this mod, and the same version.
   Host:  Main menu > Play Online > Host Game, then Invite Friends, then Go to Player Select.
