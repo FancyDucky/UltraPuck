@@ -193,7 +193,10 @@ namespace CP99Online
                     var i = Array.IndexOf(FpsOptions, Plugin.FrameRateLimit.Value);
                     Plugin.FrameRateLimit.Value = FpsOptions[(i + 1) % FpsOptions.Length];
                 }),
+                Item.Action(() => "Auto Update: " + (Plugin.AutoUpdate.Value ? "On" : "Off"),
+                    () => Plugin.AutoUpdate.Value = !Plugin.AutoUpdate.Value),
                 Item.Action(() => "More Options (F8)", () => ModMenu.Show(0)),
+                Item.Info(() => "CP99 Online " + Plugin.Version + ": " + Updater.Status),
                 Item.Info(() => "Select a setting to change it."),
                 Item.Info(() => "No Boost Slowdown: boosting doesn't slow you down afterwards."),
                 Item.Info(() => "Online, the host's mechanics settings apply."),

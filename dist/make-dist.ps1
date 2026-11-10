@@ -50,4 +50,12 @@ try {
         if ($f.Extension -eq '.sh') { $e.ExternalAttributes = [int](0x81ED -shl 16) }
     }
 } finally { $zip.Dispose() }
+# Loose files for the GitHub release: the in-game updater downloads these two from releases/latest.
+$rel = Join-Path $dist 'release'
+if (Test-Path -LiteralPath $rel) { Remove-Item -LiteralPath $rel -Recurse -Force }
+New-Item -ItemType Directory -Force -Path $rel | Out-Null
+Copy-Item -LiteralPath $plugin -Destination (Join-Path $rel 'CP99Online.dll')
+[IO.File]::WriteAllText((Join-Path $rel 'version.txt'), $version, (New-Object Text.ASCIIEncoding))
+Copy-Item -LiteralPath $zipPath -Destination $rel
+"Release files in $rel (upload all three to a GitHub release tagged v$version)"
 "Built $zipPath ($([math]::Round((Get-Item -LiteralPath $zipPath).Length / 1KB)) KB)"

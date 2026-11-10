@@ -14,7 +14,7 @@ namespace CP99Online
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "cp99.online";
-        public const string Version = "0.3.0";
+        public const string Version = "0.3.1";
 
         internal static ManualLogSource Logger_;
         internal static ConfigEntry<bool> NoBoostSlowdown;
@@ -27,6 +27,8 @@ namespace CP99Online
         internal static ConfigEntry<string> LastAddress;
         internal static ConfigEntry<ControllerChoice> OnlineController;
         internal static ConfigEntry<bool> DeckDefaultsApplied;
+        internal static ConfigEntry<bool> AutoUpdate;
+        internal static string DllPath;
 
         /// <summary>Steam sets SteamDeck=1 on the Deck, and Proton passes it through to the game.</summary>
         internal static readonly bool IsSteamDeck =
@@ -54,6 +56,8 @@ namespace CP99Online
                 "What you play with when you join someone else's game.");
             OpenMenuOnStart = Config.Bind("Debug", "OpenMenuOnStart", false,
                 "Open the mod menu as soon as the game starts (used for testing).");
+            AutoUpdate = Config.Bind("General", "AutoUpdate", true,
+                "Check GitHub for a newer version at startup and install it (takes effect after a restart).");
             DeckDefaultsApplied = Config.Bind("General", "SteamDeckDefaultsApplied", false,
                 "Set automatically the first time the mod runs on a Steam Deck (switches online controls to Gamepad).");
 
@@ -90,6 +94,8 @@ namespace CP99Online
             SceneDump.Dir = Path.GetDirectoryName(Info.Location);
             gameObject.AddComponent<SceneDump>();
             gameObject.AddComponent<MenuTest>();
+            DllPath = Info.Location;
+            gameObject.AddComponent<Updater>();
             Logger.LogInfo("Mod menu ready (" + MenuKey.Value + " or hold the gamepad View/Back button)" +
                 (IsSteamDeck ? " - Steam Deck" : string.Empty));
         }

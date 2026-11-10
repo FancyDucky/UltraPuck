@@ -7,6 +7,7 @@ RLTAS-clean/
 **/bin/
 **/obj/
 dist/build/
+dist/release/
 dist/*.zip
 
 # Editor / OS clutter

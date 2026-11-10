@@ -7,6 +7,7 @@ A mod for [ClusterPuck 99](https://store.steampowered.com/app/337960/) that adds
 - **Uncapped FPS** (60 / 120 / 144 / 240 / unlimited).
 - **Play Online** and **Mods** entries in the game's own main menu (keyboard and controller).
 - **Overlay menu** for extras like direct IP — F8, or hold View/Back on a controller.
+- **Auto-update** from this repo's GitHub Releases (on by default; Main menu > Mods > Auto Update).
 - Windows, Linux and Steam Deck (via Proton).
 
 ## Install
@@ -28,6 +29,14 @@ cd src/CP99Online
 dotnet build -c Release          # builds and copies the plugin into the game's BepInEx/plugins folder
 powershell -ExecutionPolicy Bypass -File ../../dist/make-dist.ps1   # builds dist/CP99Online-<version>.zip
 ```
+
+## Releasing an update
+
+1. Bump `Version` in `src/CP99Online/Plugin.cs`, build, and run `dist/make-dist.ps1`.
+2. Create a GitHub release tagged `v<version>` and attach the three files from `dist/release/`:
+   `CP99Online-<version>.zip`, `CP99Online.dll` and `version.txt`.
+3. Players' games pick up `version.txt` + `CP99Online.dll` from the latest release at startup and swap the DLL in;
+   the new version runs after their next restart. Loader (BepInEx) changes still need the installer.
 
 If the game isn't at the default Steam path, set `GameDir` in `src/CP99Online/CP99Online.csproj`.
 

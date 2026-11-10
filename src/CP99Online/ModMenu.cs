@@ -132,6 +132,11 @@ namespace CP99Online
                 GUILayout.Label("In someone else's game the host's mechanics settings apply.", _dim);
 
             GUILayout.Space(8f);
+            GUILayout.Label("Updates", _header);
+            Plugin.AutoUpdate.Value = GUILayout.Toggle(Plugin.AutoUpdate.Value, " Update automatically from GitHub");
+            GUILayout.Label(Updater.Status, _dim);
+
+            GUILayout.Space(8f);
             var limit = Plugin.FrameRateLimit.Value;
             GUILayout.Label("FPS limit: " + (limit > 0 ? limit.ToString() : "Unlimited"), _header);
             GUILayout.BeginHorizontal();
