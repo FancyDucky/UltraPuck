@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Steamworks;
 using UnityEngine;
 
@@ -123,19 +124,32 @@ namespace CP99Online.Net
                     Welcomed = true;
                     Status = "Connected to " + HostName + " - waiting for the host to start a match";
                     NetLog.Info(Status + " (client id " + _myId + ")");
+                    Toast.Show("Joined " + HostName + "'s game");
                     break;
                 case Msg.Reject:
                     Stop("Host refused: " + r.Str());
+                    Toast.Show(Status);
                     break;
                 case Msg.Bye:
-                    Stop("Host ended the session (" + r.Str() + ")");
+                    r.Str();
+                    Stop((string.IsNullOrEmpty(HostName) ? "The host" : HostName) + " ended the game");
+                    Toast.Show(Status);
                     break;
                 case Msg.Lobby:
                 {
+                    var before = Lobby.ToDictionary(e => e.Id, e => e.Name);
                     Lobby.Clear();
                     int n = r.U8();
                     for (var i = 0; i < n; i++)
                         Lobby.Add(new LobbyEntry { Id = r.U8(), Name = r.Str(), Team = r.U8() });
+                    // Tell this player when someone else joins or leaves (not for the first list after joining).
+                    if (before.Count > 0)
+                    {
+                        foreach (var e in Lobby)
+                            if (e.Id != 0 && e.Id != _myId && !before.ContainsKey(e.Id)) Toast.Show(e.Name + " joined");
+                        foreach (var kv in before)
+                            if (kv.Key != 0 && kv.Key != _myId && Lobby.All(e => e.Id != kv.Key)) Toast.Show(kv.Value + " left");
+                    }
                     break;
                 }
                 case Msg.BoxAssign:
@@ -303,7 +317,7 @@ namespace CP99Online.Net
             Connection c;
             if (!_conns.TryGetValue(0, out c)) return;
             if (!Welcomed && Now - _connectStarted > Proto.Timeout) { Stop("Couldn't reach the host"); return; }
-            if (Welcomed && Now - c.LastHeard > Proto.Timeout) { Stop("Lost connection to the host"); return; }
+            if (Welcomed && Now - c.LastHeard > Proto.Timeout) { Stop("Lost connection to the host"); Toast.Show(Status); return; }
             LobbyClientUpdate();
 
             var gm = Globals.gameManager;

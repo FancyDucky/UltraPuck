@@ -91,6 +91,7 @@ namespace CP99Online
             NetLog.Init(Path.GetDirectoryName(Info.Location));
             gameObject.AddComponent<NetSession>();
             gameObject.AddComponent<ModMenu>();
+            gameObject.AddComponent<Toast>();
             gameObject.AddComponent<TestHarness>();
             SceneDump.Dir = Path.GetDirectoryName(Info.Location);
             gameObject.AddComponent<SceneDump>();

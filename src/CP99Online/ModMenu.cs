@@ -189,14 +189,7 @@ namespace CP99Online
             GUILayout.EndHorizontal();
             if (string.IsNullOrEmpty(Plugin.PlayerName.Value))
                 GUILayout.Label("Blank = your Steam name", _dim);
-
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Controls", GUILayout.Width(70f));
-            var gamepad = Plugin.OnlineController.Value == ControllerChoice.Gamepad;
-            if (GUILayout.Toggle(!gamepad, "Keyboard + mouse", GUI.skin.button)) Plugin.OnlineController.Value = ControllerChoice.KeyboardMouse;
-            if (GUILayout.Toggle(gamepad, "Gamepad", GUI.skin.button)) Plugin.OnlineController.Value = ControllerChoice.Gamepad;
-            GUILayout.EndHorizontal();
-            GUILayout.Label("Used when you join a game. As host, pick controls in the normal player selection.", _dim);
+            GUILayout.Label("Shown to others while connecting. In matches your profile name is used.", _dim);
             GUILayout.Space(6f);
         }
 
@@ -218,7 +211,6 @@ namespace CP99Online
 
             GUILayout.Space(8f);
             GUILayout.Label("Join a game", _header);
-            DrawTeamPicker(s);
             GUILayout.BeginHorizontal();
             Plugin.LastAddress.Value = GUILayout.TextField(Plugin.LastAddress.Value, 64);
             if (GUILayout.Button("Join IP", GUILayout.Width(80f)))
@@ -254,9 +246,7 @@ namespace CP99Online
             foreach (var c in s.Clients.ToList())
             {
                 GUILayout.BeginHorizontal();
-                GUILayout.Label(c.Name, GUILayout.Width(150f));
-                if (GUILayout.Toggle(c.Team == 0, "Team 1", GUI.skin.button) && c.Team != 0) s.SetClientTeam(c.Id, 0);
-                if (GUILayout.Toggle(c.Team == 1, "Team 2", GUI.skin.button) && c.Team != 1) s.SetClientTeam(c.Id, 1);
+                GUILayout.Label(c.Name, GUILayout.Width(250f));
                 if (GUILayout.Button("Kick", GUILayout.Width(50f))) s.Kick(c.Id);
                 GUILayout.EndHorizontal();
             }
@@ -283,21 +273,9 @@ namespace CP99Online
             {
                 GUILayout.Label("Lobby", _header);
                 foreach (var e in s.Lobby)
-                    GUILayout.Label(e.Name + (e.Team == 255 ? string.Empty : "  - Team " + (e.Team + 1)));
-                GUILayout.Space(4f);
-                DrawTeamPicker(s);
+                    GUILayout.Label(e.Name);
             }
             if (GUILayout.Button("Leave game")) s.Stop("You left");
-        }
-
-        private static void DrawTeamPicker(NetSession s)
-        {
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Team", GUILayout.Width(70f));
-            var team = Plugin.OnlineTeam.Value;
-            if (GUILayout.Toggle(team == 0, "Team 1", GUI.skin.button) && team != 0) s.RequestTeam(0);
-            if (GUILayout.Toggle(team == 1, "Team 2", GUI.skin.button) && team != 1) s.RequestTeam(1);
-            GUILayout.EndHorizontal();
         }
 
         private void SavePort()

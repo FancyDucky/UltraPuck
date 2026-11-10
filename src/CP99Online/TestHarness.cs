@@ -216,7 +216,25 @@ namespace CP99Online
                 sb.Append(" | s" + i + " " + b.playerData.account.name + " " + Fmt(b.transform.position) + (b.alive ? "" : " DEAD"));
             }
             NetLog.Info(sb.ToString());
+            if (_diagCount++ < 40)
+            {
+                var d = new StringBuilder("DIAG fixedDeltaTime=" + Time.fixedDeltaTime + " maxDelta=" + Time.maximumDeltaTime +
+                    " targetFps=" + Application.targetFrameRate + " vSync=" + QualitySettings.vSyncCount +
+                    " replaying=" + (gm.replayManager != null && gm.replayManager.replaying) +
+                    " puckInterp=" + gm.puck.GetComponent<Rigidbody2D>().interpolation);
+                foreach (var b in Match.Balls)
+                {
+                    var rb = b.GetComponent<Rigidbody2D>();
+                    d.Append(" | " + b.playerData.account.name + " interp=" + (rb != null ? rb.interpolation.ToString() : "none") +
+                        " kinematic=" + (rb != null && rb.isKinematic));
+                }
+                var cam = gm.gameCam != null ? gm.gameCam.GetComponent<ArenaCamera>() : null;
+                d.Append(" | camera=" + (cam != null ? "ArenaCamera follow=" + cam.followSpeed + " target=" + (cam.trackingObject ? cam.trackingObject.name : "-") : "other"));
+                NetLog.Info(d.ToString());
+            }
         }
+
+        private static int _diagCount;
 
         private static string Fmt(Vector3 v) { return "(" + v.x.ToString("F2") + "," + v.y.ToString("F2") + ")"; }
     }
@@ -263,8 +281,6 @@ namespace CP99Online
 
             nav.MoveDownList(); nav.NextMenu();                  // Play Online
             yield return new WaitForSeconds(1.5f); Shot(dir, "m2_online_idle"); yield return new WaitForSeconds(2f);
-            nav.MoveDownList(); nav.NextMenu();                  // Team toggle (stays open)
-            yield return new WaitForSeconds(1f); Shot(dir, "m3_online_team"); yield return new WaitForSeconds(2f);
             NetSession.Instance.StartHostDirect(27199, "127.0.0.1");
             yield return new WaitForSeconds(1.5f); Shot(dir, "m4_online_host"); yield return new WaitForSeconds(2f);
             NetSession.Instance.Stop("test");

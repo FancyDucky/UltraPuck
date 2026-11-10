@@ -28,6 +28,65 @@ namespace UltraPuck
         public override void OnDisable() { CP99Online.Patches.FrameRate.Apply(); }
     }
 
+    /// <summary>
+    /// The game moves balls and the puck in 50 Hz physics steps with Rigidbody2D interpolation off, so at
+    /// 60+ FPS they hold still for a frame, then jump (and their name tags with them). Turning interpolation on
+    /// draws them smoothly between steps; the simulation itself is unchanged.
+    /// Left off during instant replays (which place objects directly) and for online clients (their positions
+    /// come from the host and are already smoothed every frame).
+    /// </summary>
+    internal sealed class SmoothMotion : UltraMod
+    {
+        private readonly System.Collections.Generic.List<UnityEngine.Rigidbody2D> _bodies = new System.Collections.Generic.List<UnityEngine.Rigidbody2D>();
+        private float _nextScan;
+
+        public override string Id { get { return "ultrapuck.smooth"; } }
+        public override string Name { get { return "Smooth Motion"; } }
+        public override string Author { get { return "UltraPuck"; } }
+        public override string Version { get { return Plugin.Version; } }
+        public override string Description { get { return "Players, name tags and the puck move smoothly instead of jittering. Visual only."; } }
+
+        public override void OnEnable() { _nextScan = 0f; }
+
+        public override void OnDisable()
+        {
+            foreach (var rb in _bodies)
+                if (rb != null) rb.interpolation = UnityEngine.RigidbodyInterpolation2D.None;
+            _bodies.Clear();
+        }
+
+        public override void OnSceneLoaded(string sceneName) { _bodies.Clear(); _nextScan = 0f; }
+
+        public override void OnUpdate()
+        {
+            var gm = Globals.gameManager;
+            if (gm == null) return;
+
+            var now = UnityEngine.Time.realtimeSinceStartup;
+            if (now >= _nextScan)
+            {
+                // Balls can be added (respawns, bots), so look again now and then.
+                _nextScan = now + 0.5f;
+                _bodies.RemoveAll(rb => rb == null);
+                foreach (var ball in UnityEngine.Object.FindObjectsOfType<BallData>())
+                    Track(ball.GetComponent<UnityEngine.Rigidbody2D>());
+                if (gm.puck != null) Track(gm.puck.GetComponent<UnityEngine.Rigidbody2D>());
+            }
+
+            var replaying = gm.replayManager != null && gm.replayManager.replaying;
+            var mode = replaying || CP99Online.Net.NetSession.ClientInMatch
+                ? UnityEngine.RigidbodyInterpolation2D.None
+                : UnityEngine.RigidbodyInterpolation2D.Interpolate;
+            foreach (var rb in _bodies)
+                if (rb != null && rb.interpolation != mode) rb.interpolation = mode;
+        }
+
+        private void Track(UnityEngine.Rigidbody2D rb)
+        {
+            if (rb != null && !_bodies.Contains(rb)) _bodies.Add(rb);
+        }
+    }
+
     /// <summary>Removes the slowdown after a boost/shove.</summary>
     internal sealed class BetterBoost : UltraMod
     {

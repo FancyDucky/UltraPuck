@@ -5,7 +5,8 @@ A mod for [ClusterPuck 99](https://store.steampowered.com/app/337960/) that adds
 - **Online multiplayer** — host through Steam (friends-only lobby + invites, no port forwarding) or direct IP.
   Everyone shares the real player select screen (own profile, team) and watches the host pick the arena and mode.
 - **Mod manager**: Main menu > Mods lists every mod. Select one to turn it on or off and change its settings.
-  Built-in mods: **FPS+** (60 / 120 / 144 / 240 / unlimited) and **Better Boost** (no slowdown after boosting).
+  Built-in mods: **FPS+** (60 / 120 / 144 / 240 / unlimited), **Smooth Motion** (no jittery players and name tags) and
+  **Better Boost** (no slowdown after boosting).
 - **Make your own mods**: drop a `.dll` in the game's `Mods` folder. See [docs/MAKING-MODS.md](docs/MAKING-MODS.md)
   and [examples/ExampleMod](examples/ExampleMod).
 - **Play Online** and **Mods** entries in the game's own main menu (keyboard and controller).

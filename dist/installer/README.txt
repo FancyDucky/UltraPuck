@@ -1,5 +1,5 @@
 UltraPuck {VERSION} - mod for ClusterPuck 99
-Online play for ClusterPuck 99, plus a mod manager with built-in mods (FPS+, Better Boost).
+Online play for ClusterPuck 99, plus a mod manager with built-in mods (FPS+, Smooth Motion, Better Boost).
 
 INSTALL ON WINDOWS
   1. Extract this zip (right-click > Extract All).
@@ -32,7 +32,8 @@ PLAY ONLINE
 
 MODS
   Main menu > Mods lists every mod. Select one to turn it on or off and change its settings.
-  Built in: FPS+ (raise the 60 FPS cap) and Better Boost (no slowdown after boosting).
+  Built in: FPS+ (raise the 60 FPS cap), Smooth Motion (players and name tags move smoothly
+  instead of jittering) and Better Boost (no slowdown after boosting).
   Add more: put a mod's .dll in the "Mods" folder in the game folder (Mods > Open Mods Folder),
   then restart the game. Online, the host's gameplay mods apply.
   F8 (or hold View/Back on a controller) opens an overlay with the same options, plus direct IP.

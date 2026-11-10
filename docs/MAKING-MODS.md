@@ -4,7 +4,7 @@ An UltraPuck mod is a small C# `.dll`. Players put it in the **`Mods` folder** i
 (next to `ClusterPuck99.exe`) and restart the game. It then appears in **Main menu > Mods** (and in the F8 menu).
 From there they can turn it on and off and change its settings.
 
-The built-in **FPS+** and **Better Boost** mods use the same system. Online play is part of UltraPuck itself,
+The built-in **FPS+**, **Smooth Motion** and **Better Boost** mods use the same system. Online play is part of UltraPuck itself,
 so it isn't in the list and can't be turned off.
 
 ## Quick start

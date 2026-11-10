@@ -120,28 +120,21 @@ namespace CP99Online
                     {
                         items.Add(Item.Action(() => "Host Game (Direct IP)", () => s.StartHostDirect(Plugin.Port.Value, null)));
                     }
-                    items.Add(TeamItem(s));
-                    items.Add(Item.Action(() => "Controls: " + (Plugin.OnlineController.Value == ControllerChoice.Gamepad ? "Gamepad" : "Keyboard"),
-                        () => Plugin.OnlineController.Value = Plugin.OnlineController.Value == ControllerChoice.Gamepad
-                            ? ControllerChoice.KeyboardMouse : ControllerChoice.Gamepad));
-                    items.Add(Item.Action(() => "More Options (F8)", () => ModMenu.Show(1)));
                     if (!SteamLobby.Available) items.Add(Item.Info(() => "Launch through Steam to host or join friends."));
-                    items.Add(Item.Info(() => "Your name: " + NetSession.LocalName()));
+                    items.Add(Item.Info(() => "Pick your profile and team on the player select screen."));
                     break;
 
                 case Role.Host:
                     items.Add(Item.Action(() => "Go to Player Select", () => Application.LoadLevel("PlayerSelection")));
                     if (s.TransportName == "Steam") items.Add(Item.Action(() => "Invite Friends", SteamLobby.InviteFriends));
                     items.Add(Item.Action(() => "Stop Hosting", () => s.Stop("Stopped hosting")));
-                    items.Add(Item.Action(() => "More Options (F8)", () => ModMenu.Show(1)));
                     items.Add(Item.Info(() => s.ClientCount == 0
                         ? "Waiting for friends to join..."
-                        : "Joined: " + string.Join(", ", s.Clients.Select(c => c.Name + " (Team " + (c.Team + 1) + ")").ToArray())));
+                        : "Joined: " + string.Join(", ", s.Clients.Select(c => c.Name).ToArray())));
                     items.Add(Item.Info(() => "Everyone joins on the player select screen."));
                     break;
 
                 case Role.Client:
-                    if (s.Welcomed) items.Add(TeamItem(s));
                     items.Add(Item.Action(() => "Leave Game", () => s.Stop("You left")));
                     items.Add(Item.Info(() => s.Welcomed
                         ? "In " + (string.IsNullOrEmpty(s.HostName) ? "the host" : s.HostName) + "'s game. You'll follow the host to player select."
@@ -152,11 +145,6 @@ namespace CP99Online
                     break;
             }
             return items;
-        }
-
-        private static Item TeamItem(NetSession s)
-        {
-            return Item.Action(() => "Team: " + (Plugin.OnlineTeam.Value + 1), () => s.RequestTeam(1 - Plugin.OnlineTeam.Value));
         }
 
         private static string LobbyKey()

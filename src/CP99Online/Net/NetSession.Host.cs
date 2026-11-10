@@ -154,6 +154,7 @@ namespace CP99Online.Net
                     _msg.Str(LocalName());
                     c.SendReliable(_msg, Now);
                     NetLog.Info(name + " joined (client " + ci.Id + ", team " + (team + 1) + ")");
+                    Toast.Show(name + " joined");
                     BroadcastLobby();
                     HostSendSceneTo(ci);
                     break;
@@ -210,6 +211,7 @@ namespace CP99Online.Net
             ClientInfo ci;
             if (_clients.TryGetValue(peer, out ci))
             {
+                if (why != null) Toast.Show(why);
                 FreeBox(ci);
                 _clients.Remove(peer);
                 if (Match.Owners != null)
