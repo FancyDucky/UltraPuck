@@ -30,7 +30,13 @@ namespace CP99Online
             int p;
             if (int.TryParse(Environment.GetEnvironmentVariable("CP99_TEST_PORT"), out p)) _port = p;
             DriveInput = _role == "client";
-            NetLog.Info("TEST MODE: " + _role + " on port " + _port);
+            _rounds = Environment.GetEnvironmentVariable("CP99_ROUNDS");
+            if (!string.IsNullOrEmpty(_rounds) && _role == "host")
+            {
+                UltraPuck.ModManager.EnableForSession(UltraPuck.RoundsMode.Instance); // this session only, not saved
+                UltraPuck.RoundsMode.ForceTeamVote = _rounds == "team";
+            }
+            NetLog.Info("TEST MODE: " + _role + " on port " + _port + (string.IsNullOrEmpty(_rounds) ? string.Empty : " rounds=" + _rounds));
         }
 
         private void Update()
@@ -47,11 +53,38 @@ namespace CP99Online
             }
 
             LobbyStep(s, t);
+            if (!string.IsNullOrEmpty(_rounds)) RoundsStep(t);
 
             if (Match.Active && t > _nextLog)
             {
                 _nextLog = t + 2f;
                 LogWorld();
+            }
+        }
+
+        // ---- Rounds Mode: 3 goals to win so there are card picks; pick automatically after a few seconds
+        private string _rounds;
+        private bool _goalsSet;
+        private int _phasesSeen;
+        private bool _inPhase;
+
+        private void RoundsStep(float t)
+        {
+            if (_role == "host" && Match.Active && !_goalsSet) { _goalsSet = true; NumGoalsToWinManager.numGoalsToWin = 3; NetLog.Info("TEST rounds: goals to win = 3"); }
+            if (!Match.Active) { _goalsSet = false; }
+            var cg = Rounds.CardGame.PhaseActive && !Rounds.CardGame.Revealing;
+            if (cg && !_inPhase) { _inPhase = true; _phasesSeen++; NetLog.Info("TEST rounds: card screen " + _phasesSeen + " shown"); }
+            if (!cg) { _inPhase = false; return; }
+            var wait = _role == "host" ? 5f : 7f;
+            if (Time.realtimeSinceStartup - Rounds.CardGame.PhaseStartedAt < wait) return;
+            for (var i = 0; i < Rounds.CardGame.Seats.Count; i++)
+            {
+                var seat = Rounds.CardGame.Seats[i];
+                if (!Rounds.CardGame.IsLocal(seat) || seat.Choice >= 0 || seat.Offer.Length == 0) continue;
+                var pick = _phasesSeen % seat.Offer.Length;
+                NetLog.Info("TEST rounds: " + seat.Name + " picks " + seat.Offer[pick]);
+                if (_role == "host") Rounds.CardGame.Pick(i, pick, 0);
+                else { Rounds.CardGame.PickLocal(i, pick); NetSession.Instance.ClientSendCardPick(i, pick); }
             }
         }
 

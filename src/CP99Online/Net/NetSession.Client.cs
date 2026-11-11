@@ -161,6 +161,9 @@ namespace CP99Online.Net
                 case Msg.Scene:
                     ClientHandleScene(r);
                     break;
+                case Msg.CardState:
+                    ClientHandleCards(r);
+                    break;
                 case Msg.Nav:
                     _navMenu = r.Str();
                     _navElement = r.Str();

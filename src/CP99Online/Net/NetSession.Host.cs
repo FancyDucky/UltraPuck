@@ -171,6 +171,9 @@ namespace CP99Online.Net
                 case Msg.Input:
                     if (ci != null) ReadInput(ci.Input, r);
                     break;
+                case Msg.CardPick:
+                    if (ci != null) HostHandleCardPick(ci, r);
+                    break;
                 case Msg.Loaded:
                     if (ci != null && r.U8() == Match.Id)
                     {
@@ -249,6 +252,7 @@ namespace CP99Online.Net
         private void HostUpdate()
         {
             LobbyHostUpdate();
+            HostCardsUpdate();
             List<int> dead = null;
             foreach (var c in _conns.Values)
                 if (Now - c.LastHeard > Proto.Timeout) (dead ?? (dead = new List<int>())).Add(c.PeerId);

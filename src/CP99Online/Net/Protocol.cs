@@ -25,6 +25,8 @@ namespace CP99Online.Net
         BoxTable,       // h->c  8 x {u8 owner, u8 state, u8 team+1, str name, u8 symbol}, options
         Scene,          // h->c  str menu scene to be in
         Nav,            // h->c  str menu path, str element path, i32 goals, f32 game length (GameSelection)
+        CardState,      // h->c  Rounds Mode: phase, offers, picks/votes and everyone's cards (see NetSession.Cards)
+        CardPick,       // c->h  u8 seat, u8 offer index
     }
 
     internal enum Ev : byte
@@ -42,7 +44,7 @@ namespace CP99Online.Net
 
     internal static class Proto
     {
-        public const ushort Version = 2;
+        public const ushort Version = 3;
         public const int MaxClients = 7;
         public const float Timeout = 10f;
         public const float SendRate = 1f / 60f;

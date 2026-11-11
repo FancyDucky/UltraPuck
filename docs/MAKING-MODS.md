@@ -4,7 +4,7 @@ An UltraPuck mod is a small C# `.dll`. Players put it in the **`Mods` folder** i
 (next to `ClusterPuck99.exe`) and restart the game. It then appears in **Main menu > Mods** (and in the F8 menu).
 From there they can turn it on and off and change its settings.
 
-The built-in **FPS+**, **Smooth Motion** and **Better Boost** mods use the same system. Online play is part of UltraPuck itself,
+The built-in **FPS+**, **Smooth Motion**, **Better Boost** and **Rounds Mode** mods use the same system. Online play is part of UltraPuck itself,
 so it isn't in the list and can't be turned off.
 
 ## Quick start
@@ -97,6 +97,45 @@ turns it off. If one `.dll` holds several mods, override `OnEnable` and call
 The host runs the match and everyone else sees the result. A mod that changes gameplay (physics, speed, rules)
 therefore takes effect when **the host** has it on. A mod that only changes what you see, such as an overlay,
 camera or colours, works for each player on their own.
+
+## Making cards for Rounds Mode
+
+When Rounds Mode is on, everyone picks a card after each goal. A card can be a stat change, a custom effect,
+or both. Register your cards in your mod's `OnLoad`:
+
+```csharp
+using UltraPuck;
+using UnityEngine;
+
+public class GlassCannonCard : UltraCard
+{
+    public override string Id          { get { return "yourname.glasscannon"; } } // unique, same on every PC
+    public override string Name        { get { return "Glass Cannon"; } }
+    public override string Description { get { return "Shots 50% stronger, but 30% lighter."; } }
+    public override Color Color        { get { return new Color(0.9f, 0.4f, 0.9f); } }
+    public override int MaxPerPlayer   { get { return 2; } }     // 0 = no limit
+    public override float Rarity       { get { return 0.5f; } }  // offered half as often
+
+    public override void Apply(CardStats stats)                  // once per copy the player owns
+    {
+        stats.ShotPower *= 1.5f;
+        stats.Weight *= 0.7f;
+    }
+}
+
+public class MyMod : UltraMod
+{
+    // ... Id, Name ...
+    public override void OnLoad() { Cards.Register(new GlassCannonCard()); }
+}
+```
+
+`CardStats` has `MoveSpeed`, `ShotPower`, `Weight` and `DashCooldown` (multipliers), plus `ExtraDashes`.
+For anything else, override `ApplyToBall(BallData ball, int copies)`. It runs on the player's ball when they
+get the card and after every field reset.
+
+Online, the host runs the game, so effects only happen on the host. Everyone playing together needs the
+same card mods, so each card shows the right name and description.
 
 ## Registering from a BepInEx plugin
 

@@ -1,5 +1,5 @@
 UltraPuck {VERSION} - mod for ClusterPuck 99
-Online play for ClusterPuck 99, plus a mod manager with built-in mods (FPS+, Smooth Motion, Better Boost).
+Online play for ClusterPuck 99, plus a mod manager with built-in mods (FPS+, Smooth Motion, Better Boost, Rounds Mode).
 
 START HERE: open the folder for your computer.
   Windows               -> Windows folder
@@ -54,6 +54,10 @@ MODS
   Main menu > Mods lists every mod. Select one to turn it on or off and change its settings.
   Built in: FPS+ (raise the 60 FPS cap), Smooth Motion (players and name tags move smoothly
   instead of jittering) and Better Boost (no slowdown after boosting).
+  Rounds Mode (off by default): after each goal everyone picks a card that powers them up for the
+  rest of the match. Pick with the stick or arrow keys and A / Space / Enter, or click a card.
+  Settings: each player picks, or each team votes for one card; cards offered; pick time.
+  Online, the host's Rounds Mode settings apply.
   Add more: put a mod's .dll in the "Mods" folder in the game folder (Mods > Open Mods Folder),
   then restart the game. Online, the host's gameplay mods apply.
   F8 (or hold View/Back on a controller) opens an overlay with the same options, plus direct IP.

@@ -87,6 +87,61 @@ namespace UltraPuck
         }
     }
 
+    /// <summary>
+    /// Card picks between goals: after each goal (that doesn't end the match) the game holds before the
+    /// field reset and every player picks one of a few random cards (or each team votes for one).
+    /// The logic lives in CP99Online.Rounds; online, the host's settings decide.
+    /// </summary>
+    internal sealed class RoundsMode : UltraMod
+    {
+        internal static RoundsMode Instance;
+        internal static readonly string[] PickTimes = { "15s", "30s", "60s", "No Limit" };
+
+        public RoundsMode() { Instance = this; }
+
+        public override string Id { get { return "ultrapuck.rounds"; } }
+        public override string Name { get { return "Rounds Mode"; } }
+        public override string Author { get { return "UltraPuck"; } }
+        public override string Version { get { return Plugin.Version; } }
+        public override string Description { get { return "After each goal everyone picks a card that powers them up for the rest of the match."; } }
+        public override bool EnabledByDefault { get { return false; } }
+
+        internal BepInEx.Configuration.ConfigEntry<bool> TeamVote;
+        internal BepInEx.Configuration.ConfigEntry<int> Choices;
+        internal BepInEx.Configuration.ConfigEntry<string> PickTime;
+        internal BepInEx.Configuration.ConfigEntry<bool> ShowDuringPlay;
+
+        public override void OnLoad()
+        {
+            TeamVote = AddChoice("TeamVote", "Picking", false, new[] { false, true }, v => v ? "Team Vote" : "Each Player",
+                "Each Player: everyone gets their own card. Team Vote: each team votes for one card that the whole team gets (ties are random).");
+            Choices = AddChoice("Choices", "Cards Offered", 3, new[] { 3, 4, 5 });
+            PickTime = AddChoice("PickTime", "Pick Time", "30s", PickTimes,
+                description: "How long players have to pick. Anyone who hasn't picked gets a random card.");
+            ShowDuringPlay = AddToggle("ShowDuringPlay", "Cards During Play", true,
+                "Show everyone's cards in the lower corner during play (hover for details).");
+        }
+
+        public override void OnEnable() { }
+        public override void OnDisable() { }
+
+        internal static bool Active { get { return Instance != null && Instance.Enabled; } }
+
+        /// <summary>Test override for the Picking setting (not saved).</summary>
+        internal static bool? ForceTeamVote;
+
+        /// <summary>Seconds to pick, or -1 for no limit.</summary>
+        internal static float PickSeconds
+        {
+            get
+            {
+                var v = Instance != null ? Instance.PickTime.Value : "30s";
+                int s;
+                return v.EndsWith("s") && int.TryParse(v.TrimEnd('s'), out s) ? s : -1f;
+            }
+        }
+    }
+
     /// <summary>Removes the slowdown after a boost/shove.</summary>
     internal sealed class BetterBoost : UltraMod
     {

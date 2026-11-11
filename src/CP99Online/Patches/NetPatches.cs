@@ -117,10 +117,25 @@ namespace CP99Online.Patches
     [HarmonyPatch(typeof(GameManager), nameof(GameManager.ResetField))]
     internal static class ResetFieldPatch
     {
-        private static void Postfix(bool suddenDeath_)
+        /// <summary>Rounds Mode holds the reset after a goal while cards are picked; it calls ResetField again when done.</summary>
+        private static bool Prefix(GameManager __instance, bool suddenDeath_, out bool __state)
         {
-            if (NetSession.HostInMatch) NetSession.Instance.HostOnResetField(suddenDeath_);
+            __state = Rounds.CardGame.HoldReset(__instance, suddenDeath_);
+            return !__state;
         }
+
+        private static void Postfix(bool suddenDeath_, bool __state)
+        {
+            if (__state) return; // held: nothing was reset
+            if (NetSession.HostInMatch) NetSession.Instance.HostOnResetField(suddenDeath_);
+            Rounds.CardGame.AfterReset();
+        }
+    }
+
+    [HarmonyPatch(typeof(GameManager), nameof(GameManager.NewGame))]
+    internal static class CardsNewGamePatch
+    {
+        private static void Prefix() { Rounds.CardGame.OnNewMatch(); }
     }
 
     [HarmonyPatch(typeof(GUI_Timer), nameof(GUI_Timer.SuddenDeath))]
