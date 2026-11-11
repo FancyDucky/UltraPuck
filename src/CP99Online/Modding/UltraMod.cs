@@ -109,6 +109,17 @@ namespace UltraPuck
                 i => entry.Value = options[i]));
             return entry;
         }
+
+        /// <summary>
+        /// Adds an item that opens a page of more settings (e.g. one On/Off per card). The list is asked for each
+        /// time the page opens, so it can change. Build entries with <see cref="ModSetting.Toggle"/>.
+        /// </summary>
+        protected ModSetting AddPage(string label, Func<IList<ModSetting>> settings, string description = "")
+        {
+            var page = ModSetting.MakePage(label, description, settings);
+            _settings.Add(page);
+            return page;
+        }
     }
 
     /// <summary>A setting shown on a mod's page: a label and a value that cycles through a list of options.</summary>
@@ -139,5 +150,22 @@ namespace UltraPuck
         public string ValueText { get { return Options[Index]; } }
 
         public void Next() { Index = Index + 1; }
+
+        /// <summary>For a page item (see UltraMod.AddPage): the settings shown on that page. Null for normal settings.</summary>
+        public Func<IList<ModSetting>> Page { get; private set; }
+
+        internal static ModSetting MakePage(string label, string description, Func<IList<ModSetting>> page)
+        {
+            return new ModSetting(label, description, new[] { string.Empty }, () => 0, i => { }) { Page = page };
+        }
+
+        /// <summary>An On/Off setting backed by your own get/set (for pages built with UltraMod.AddPage).</summary>
+        public static ModSetting Toggle(string label, Func<bool> get, Action<bool> set, string description = "")
+        {
+            return new ModSetting(label, description, new[] { "Off", "On" }, () => get() ? 1 : 0, i => set(i == 1));
+        }
+
+        /// <summary>True for a two-option Off/On setting.</summary>
+        internal bool IsToggle { get { return Page == null && Options.Length == 2 && Options[0] == "Off" && Options[1] == "On"; } }
     }
 }

@@ -27,6 +27,7 @@ namespace CP99Online.Net
         Nav,            // h->c  str menu path, str element path, i32 goals, f32 game length (GameSelection)
         CardState,      // h->c  Rounds Mode: phase, offers, picks/votes and everyone's cards (see NetSession.Cards)
         CardPick,       // c->h  u8 seat, u8 offer index
+        CardShot,       // h->c  Puck Gun: u8 kind (0 fired: u16 id, u8 team, f32 x, y, vx, vy / 1 ended: u16 id)
     }
 
     internal enum Ev : byte
@@ -44,7 +45,7 @@ namespace CP99Online.Net
 
     internal static class Proto
     {
-        public const ushort Version = 3;
+        public const ushort Version = 4;
         public const int MaxClients = 7;
         public const float Timeout = 10f;
         public const float SendRate = 1f / 60f;

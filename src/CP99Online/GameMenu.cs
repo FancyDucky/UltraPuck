@@ -39,7 +39,7 @@ namespace CP99Online
             var online = ModPanel.Create(optionsPanel, "CP99_Online", "Play Online", main, true, OnlineItems, OnlineKey);
             online.OnOpen = () => _browsing = false;
             var mods = ModPanel.Create(optionsPanel, "CP99_Mods", "Mods", main, true, ModsItems, ModsKey);
-            mods.OnOpen = () => { _modPage = null; _lastMod = null; _listPage = 0; };
+            mods.OnOpen = () => { _modPage = null; _lastMod = null; _subPage = null; _lastSub = null; _listPage = 0; };
             ModsPanel = mods;
             online.Rebuild(true);
             mods.Rebuild(true);
@@ -175,16 +175,25 @@ namespace CP99Online
         private const int ModsPerPage = 5;
         private const int InfoChars = 46;
 
+        // A mod setting that opens its own page (UltraMod.AddPage), e.g. Rounds Mode > Toggle Cards.
+        private static ModSetting _subPage, _lastSub;
+        private static int _subPageNum;
+        private const int SettingsPerPage = 5;
+
         private static string ModsKey()
         {
+            if (_modPage != null && _subPage != null) return "sub|" + _modPage.Id + "|" + _subPage.Label + "|" + _subPageNum;
             return _modPage != null ? "mod|" + _modPage.Id : "list|" + _listPage + "|" + ModManager.All.Length;
         }
 
         internal static bool ModPageOpen { get { return _modPage != null; } }
 
+        /// <summary>Back: from a settings page to its mod's page, from a mod's page to the mod list.</summary>
         internal static void CloseModPage()
         {
+            if (_subPage != null) { _lastSub = _subPage; _subPage = null; return; }
             _lastMod = _modPage;
+            _lastSub = null;
             _modPage = null;
         }
 
@@ -195,6 +204,7 @@ namespace CP99Online
 
         private static List<Item> ModsItems(ModPanel p)
         {
+            if (_modPage != null && _subPage != null) return SubPageItems(_subPage);
             return _modPage != null ? ModPageItems(_modPage) : ModListItems();
         }
 
@@ -232,7 +242,8 @@ namespace CP99Online
             foreach (var setting in m.Settings)
             {
                 var st = setting;
-                items.Add(Item.Action(() => st.Label + ": " + st.ValueText, st.Next));
+                if (st.Page != null) items.Add(Item.Choice(() => st.Label + " >", () => { _subPage = st; _subPageNum = 0; }, st == _lastSub));
+                else items.Add(Item.Action(() => st.Label + ": " + st.ValueText, st.Next));
             }
             items.Add(Item.Action(() => "Back", CloseModPage));
             var by = (string.IsNullOrEmpty(m.Author) ? string.Empty : "by " + m.Author + ", ") + "version " + m.Version +
@@ -240,6 +251,34 @@ namespace CP99Online
             foreach (var line in Wrap(m.Description)) { var l = line; items.Add(Item.Info(() => l)); }
             items.Add(Item.Info(() => by));
             items.Add(Item.Info(() => m.Error != null ? "Turned off after an error: " + Clip(m.Error) : string.Empty));
+            return items;
+        }
+
+        private static List<Item> SubPageItems(ModSetting page)
+        {
+            List<ModSetting> list;
+            try { list = (page.Page() ?? new List<ModSetting>()).ToList(); }
+            catch (Exception ex) { NetLog.Warn("Settings page " + page.Label + ": " + ex.Message); list = new List<ModSetting>(); }
+            var pages = Math.Max(1, (list.Count + SettingsPerPage - 1) / SettingsPerPage);
+            _subPageNum = Mathf.Clamp(_subPageNum, 0, pages - 1);
+
+            var items = new List<Item>();
+            foreach (var setting in list.Skip(_subPageNum * SettingsPerPage).Take(SettingsPerPage))
+            {
+                var st = setting;
+                items.Add(Item.Action(() => st.Label + ": " + st.ValueText, st.Next));
+            }
+            if (pages > 1)
+                items.Add(Item.Action(() => "More (" + (_subPageNum + 1) + "/" + pages + ")", () => _subPageNum = (_subPageNum + 1) % pages));
+            if (list.Count > 1 && list.All(s => s.IsToggle))
+            {
+                items.Add(Item.Action(() => "Turn All On", () => { foreach (var s in list) s.Index = 1; }));
+                items.Add(Item.Action(() => "Turn All Off", () => { foreach (var s in list) s.Index = 0; }));
+            }
+            items.Add(Item.Action(() => "Back", CloseModPage));
+            foreach (var line in Wrap(page.Description)) { var l = line; items.Add(Item.Info(() => l)); }
+            if (list.All(s => s.IsToggle))
+                items.Add(Item.Info(() => list.Count(s => s.Index == 1) + " of " + list.Count + " on"));
             return items;
         }
 

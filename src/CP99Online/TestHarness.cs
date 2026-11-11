@@ -70,10 +70,11 @@ namespace CP99Online
 
         private void RoundsStep(float t)
         {
-            if (_role == "host" && Match.Active && !_goalsSet) { _goalsSet = true; NumGoalsToWinManager.numGoalsToWin = 3; NetLog.Info("TEST rounds: goals to win = 3"); }
+            if (_role == "host" && Match.Active && !_goalsSet) { _goalsSet = true; int g; NumGoalsToWinManager.numGoalsToWin = int.TryParse(Environment.GetEnvironmentVariable("CP99_ROUNDS_GOALS"), out g) ? g : 3; NetLog.Info("TEST rounds: goals to win = " + NumGoalsToWinManager.numGoalsToWin); }
             if (!Match.Active) { _goalsSet = false; }
+            DashBurst();
             var cg = Rounds.CardGame.PhaseActive && !Rounds.CardGame.Revealing;
-            if (cg && !_inPhase) { _inPhase = true; _phasesSeen++; NetLog.Info("TEST rounds: card screen " + _phasesSeen + " shown"); }
+            if (cg && !_inPhase) { _inPhase = true; _phasesSeen++; _burstStep = 0; _burstAt = -1f; NetLog.Info("TEST rounds: card screen " + _phasesSeen + " shown"); }
             if (!cg) { _inPhase = false; return; }
             var wait = _role == "host" ? 5f : 7f;
             if (Time.realtimeSinceStartup - Rounds.CardGame.PhaseStartedAt < wait) return;
@@ -81,11 +82,56 @@ namespace CP99Online
             {
                 var seat = Rounds.CardGame.Seats[i];
                 if (!Rounds.CardGame.IsLocal(seat) || seat.Choice >= 0 || seat.Offer.Length == 0) continue;
-                var pick = _phasesSeen % seat.Offer.Length;
+                var pick = (_phasesSeen - 1) % seat.Offer.Length; // with CP99_ROUNDS_CARD=a,b,c: round 1 picks a, round 2 b, ...
                 NetLog.Info("TEST rounds: " + seat.Name + " picks " + seat.Offer[pick]);
                 if (_role == "host") Rounds.CardGame.Pick(i, pick, 0);
                 else { Rounds.CardGame.PickLocal(i, pick); NetSession.Instance.ClientSendCardPick(i, pick); }
             }
+        }
+
+        // After the first card pick, once play resumes: the host's player dashes 3 times, 0.35 s apart.
+        private float _burstAt = -1f;
+        private int _burstStep;
+
+        private void DashBurst()
+        {
+            if (_role != "host" || _phasesSeen < 1 || _burstStep >= 4) return;
+            var gm = Globals.gameManager;
+            if (gm == null || Rounds.CardGame.PhaseActive || gm.startCountdown > 0f || gm.roundOver) return;
+            // Prefer a player with Puck Gun (aimed at the nearest opponent), else the host's own player.
+            var seat = Rounds.CardGame.Seats.FirstOrDefault(x => x.Ball != null && Rounds.CardEffects.AppliedOf(x.Ball) != null && Rounds.CardEffects.AppliedOf(x.Ball).Stats.PuckGun)
+                ?? Rounds.CardGame.Seats.FirstOrDefault(x => x.Human && x.Owner == 0);
+            if (seat == null || seat.Ball == null) return;
+            var now = Time.realtimeSinceStartup;
+            if (_burstAt < 0f) _burstAt = now + 1f;
+            if (now < _burstAt + _burstStep * 0.35f) return;
+            if (_burstStep < 3)
+            {
+                var target = Rounds.CardGame.Seats.Where(x => x.Ball != null && x.Team != seat.Team && x.Ball.alive)
+                    .OrderBy(x => Vector2.Distance(x.Ball.transform.position, seat.Ball.transform.position)).FirstOrDefault();
+                if (target != null && _burstStep == 0)
+                {
+                    var d = target.Ball.transform.position - seat.Ball.transform.position;
+                    var gun = Rounds.CardEffects.AppliedOf(seat.Ball);
+                    if (gun != null && gun.Stats.PuckGun)
+                    {
+                        // Test only: stand 4 units from the target with a clear line, so a Puck Gun hit can be checked.
+                        var p = target.Ball.transform.position - d.normalized * 4f;
+                        seat.Ball.transform.position = p;
+                        seat.Ball.GetComponent<Rigidbody2D>().position = p;
+                        d = target.Ball.transform.position - p;
+                        Rounds.CardObjects.ResetGunCooldown(seat.Ball);
+                        var shove = seat.Ball.GetComponent<BallShove>();
+                        if (shove.shoveTimer > 0f) shove.shoveTimer = 0f;
+                    }
+                    seat.Ball.transform.rotation = Quaternion.Euler(0f, 0f, Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg - 90f);
+                    NetLog.Info("TEST dash: " + seat.Name + " aims at " + target.Name + " (" + d.magnitude.ToString("F1") + " away)");
+                }
+                seat.Ball.GetComponent<BallShove>().Shove();
+                NetLog.Info("TEST dash press " + (_burstStep + 1) + ": gameTimer=" + seat.Ball.GetComponent<BallShove>().shoveTimer.ToString("F2"));
+            }
+            else NetLog.Info("TEST dash burst done");
+            _burstStep++;
         }
 
         // ---- shared player selection walkthrough
@@ -242,11 +288,14 @@ namespace CP99Online
             var gm = Globals.gameManager;
             if (gm == null) return;
             var sb = new StringBuilder("WORLD score=" + gm.teams[0].score + "-" + gm.teams[1].score +
-                " countdown=" + gm.startCountdown.ToString("F1") + " puck=" + Fmt(gm.puck.transform.position));
+                " countdown=" + gm.startCountdown.ToString("F1") + " puck=" + Fmt(gm.puck.transform.position) +
+                " carryer=" + (gm.puck.GetComponent<Puck>().carryer != null ? gm.puck.GetComponent<Puck>().carryer.name : "-") +
+                " kin=" + gm.puck.GetComponent<Rigidbody2D>().isKinematic + " v=" + gm.puck.GetComponent<Rigidbody2D>().velocity.magnitude.ToString("F1") +
+                " roundOver=" + gm.roundOver);
             for (var i = 0; i < Match.Balls.Length; i++)
             {
                 var b = Match.Balls[i];
-                sb.Append(" | s" + i + " " + b.playerData.account.name + " " + Fmt(b.transform.position) + (b.alive ? "" : " DEAD"));
+                sb.Append(" | s" + i + " " + b.playerData.account.name + " " + Fmt(b.transform.position) + (b.alive ? "" : " DEAD") + (b.canMove ? "" : " noMove") + (b.canCarry ? "" : " noCarry"));
             }
             NetLog.Info(sb.ToString());
             if (_diagCount++ < 40)
@@ -323,30 +372,28 @@ namespace CP99Online
 
             for (var i = 0; i < 6; i++) nav.MoveDownList();     // Mods
             yield return new WaitForSeconds(0.5f); Shot(dir, "m5_main_mods_selected"); yield return new WaitForSeconds(2f);
-            var fpsBefore = Plugin.FrameRateLimit.Value;
-            var overlay = UltraPuck.ModManager.Get("example.statsoverlay");
-            var overlayBefore = overlay != null && overlay.Enabled;
             nav.NextMenu();
             yield return new WaitForSeconds(1.5f); Shot(dir, "m6_mods_list"); yield return new WaitForSeconds(2f);
-            nav.NextMenu();                                      // open FPS+ page
-            yield return new WaitForSeconds(1.5f); Shot(dir, "m7_fps_page"); yield return new WaitForSeconds(2f);
-            nav.MoveDownList(); nav.NextMenu();                  // cycle FPS limit
-            yield return new WaitForSeconds(1f); Shot(dir, "m8_fps_cycled"); yield return new WaitForSeconds(2f);
-            nav.MoveUpList(); nav.NextMenu();                    // FPS+ off
-            yield return new WaitForSeconds(1f); Shot(dir, "m9_fps_off"); NetLog.Info("MENUTEST targetFrameRate=" + Application.targetFrameRate); yield return new WaitForSeconds(2f);
-            nav.NextMenu();                                      // FPS+ back on
+            for (var i = 0; i < 4; i++) nav.MoveDownList();     // Rounds Mode (5th in the list)
+            nav.NextMenu();
+            yield return new WaitForSeconds(1.5f); Shot(dir, "m7_rounds_page"); yield return new WaitForSeconds(2f);
+            for (var i = 0; i < 5; i++) nav.MoveDownList();     // Toggle Cards >
+            nav.NextMenu();
+            yield return new WaitForSeconds(1.5f); Shot(dir, "m8_toggle_cards"); yield return new WaitForSeconds(2f);
+            nav.NextMenu();                                      // first card off
+            yield return new WaitForSeconds(1f); Shot(dir, "m9_card_off");
+            NetLog.Info("MENUTEST doubledash enabled=" + UltraPuck.RoundsMode.IsCardEnabled("ultrapuck.doubledash")); yield return new WaitForSeconds(2f);
+            nav.NextMenu();                                      // and back on
             yield return new WaitForSeconds(1f);
-            nav.PreviousMenu();                                  // B: back to the list, not the main menu
-            yield return new WaitForSeconds(1.5f); Shot(dir, "m10_back_to_list"); yield return new WaitForSeconds(2f);
-            nav.MoveDownList(); nav.MoveDownList(); nav.NextMenu(); // third mod's page
-            yield return new WaitForSeconds(1.5f); Shot(dir, "m11_third_page"); yield return new WaitForSeconds(2f);
-            nav.NextMenu();                                      // toggle it
-            yield return new WaitForSeconds(1.5f); Shot(dir, "m12_third_toggled"); yield return new WaitForSeconds(2f);
+            NetLog.Info("MENUTEST doubledash enabled=" + UltraPuck.RoundsMode.IsCardEnabled("ultrapuck.doubledash"));
+            for (var i = 0; i < 5; i++) nav.MoveDownList();     // More (1/n)
+            nav.NextMenu();
+            yield return new WaitForSeconds(1.5f); Shot(dir, "m10_cards_page2"); yield return new WaitForSeconds(2f);
+            nav.PreviousMenu();                                  // B: back to the Rounds Mode page
+            yield return new WaitForSeconds(1.5f); Shot(dir, "m11_back_to_rounds"); yield return new WaitForSeconds(2f);
             nav.PreviousMenu(); yield return new WaitForSeconds(1f);
             nav.PreviousMenu(); yield return new WaitForSeconds(1.5f);
-            Shot(dir, "m13_back_main"); yield return new WaitForSeconds(2f);
-            Plugin.FrameRateLimit.Value = fpsBefore;
-            if (overlay != null) UltraPuck.ModManager.SetEnabled(overlay, overlayBefore);
+            Shot(dir, "m12_back_main"); yield return new WaitForSeconds(2f);
             NetLog.Info("MENUTEST done");
         }
 

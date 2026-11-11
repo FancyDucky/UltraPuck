@@ -58,8 +58,13 @@ namespace CP99Online.Rounds
             }
         }
 
+        /// <summary>The team picking cards this round (the one that was scored on).</summary>
+        internal static int ScoredOnTeam;
+        private static string _remoteCardsSig;
+
         internal static void OnNewMatch()
         {
+            _remoteCardsSig = null;
             Seats.Clear();
             PhaseActive = Revealing = false;
             TimeLeft = -1f;
@@ -82,6 +87,7 @@ namespace CP99Online.Rounds
         internal static void AfterReset()
         {
             if (!IsAuthority) return;
+            CardEffects.AfterFaceOff();
             foreach (var s in Seats) CardEffects.ApplyBallHooks(s);
         }
 
@@ -93,9 +99,12 @@ namespace CP99Online.Rounds
             var n = Mathf.Clamp(RoundsMode.Instance.Choices.Value, 1, 8);
 
             foreach (var s in Seats) { s.Choice = -1; s.Offer = new string[0]; s.Last = null; }
+            // Cards help the side that got scored on catch up: only they pick.
+            var scorer = gm.teams.IndexOf(gm.teamThatJustScored);
+            ScoredOnTeam = Seats.Select(s => s.Team).FirstOrDefault(t => t != scorer);
             if (TeamMode)
             {
-                foreach (var team in Seats.GroupBy(s => s.Team))
+                foreach (var team in Seats.Where(s => s.Team != scorer).GroupBy(s => s.Team))
                 {
                     var offer = Draw(team.First(), n);
                     foreach (var s in team) s.Offer = offer;
@@ -105,7 +114,7 @@ namespace CP99Online.Rounds
             }
             else
             {
-                foreach (var s in Seats)
+                foreach (var s in Seats.Where(s => s.Team != scorer))
                 {
                     s.Offer = Draw(s, n);
                     if (!s.Human && s.Offer.Length > 0) s.Choice = Random.Range(0, s.Offer.Length);
@@ -164,8 +173,14 @@ namespace CP99Online.Rounds
         /// <summary>Up to n different random cards the seat may still take (weighted by Rarity).</summary>
         private static string[] Draw(Seat seat, int n)
         {
+            var forced = System.Environment.GetEnvironmentVariable("CP99_ROUNDS_CARD"); // tests: offer exactly these cards
+            if (!string.IsNullOrEmpty(forced))
+            {
+                var list = forced.Split(',').Where(id => UltraPuck.Cards.Get(id) != null).ToArray();
+                if (list.Length > 0) return list;
+            }
             var pool = UltraPuck.Cards.All
-                .Where(c => c.Rarity > 0f && (c.MaxPerPlayer <= 0 || seat.Cards.Count(id => id == c.Id) < c.MaxPerPlayer))
+                .Where(c => c.Rarity > 0f && RoundsMode.IsCardEnabled(c.Id) && (c.MaxPerPlayer <= 0 || seat.Cards.Count(id => id == c.Id) < c.MaxPerPlayer))
                 .ToList();
             var picked = new List<string>();
             while (picked.Count < n && pool.Count > 0)
@@ -259,9 +274,9 @@ namespace CP99Online.Rounds
                     NetLog.Info("Rounds: " + s.Name + " gets " + s.Offer[i] + (s.Choice >= 0 ? string.Empty : " (random)"));
                 }
             }
+            CardEffects.RecomputeAll(true);
             foreach (var s in Seats)
             {
-                CardEffects.Recompute(s);
                 if (s.Ball != null) NetLog.Info("Rounds: " + s.Name + " cards=[" + string.Join(", ", s.Cards.ToArray()) + "] " + CardEffects.Describe(s.Ball));
             }
             Revealing = true;
@@ -294,6 +309,10 @@ namespace CP99Online.Rounds
             Seats.AddRange(seats);
             foreach (var kv in mine) Seats[kv.Key].Choice = kv.Value;
             for (var i = 0; i < Seats.Count; i++) Seats[i].Ball = Match.Ball(i);
+            TeamMode = team;
+            // Ball sizes and pylons are drawn on every PC: re-apply when anyone's cards change.
+            var sig = string.Join("|", Seats.Select(s => string.Join(",", s.Cards.ToArray())).ToArray());
+            if (sig != _remoteCardsSig) { _remoteCardsSig = sig; CardEffects.RecomputeAll(false); }
             PhaseActive = active;
             Revealing = revealing;
             TeamMode = team;

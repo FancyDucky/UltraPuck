@@ -133,6 +133,25 @@ namespace CP99Online
                 if (m.Error != null) GUILayout.Label("Turned off after an error: " + m.Error, _dim);
                 foreach (var st in m.Settings)
                 {
+                    if (st.Page != null)
+                    {
+                        GUILayout.Label("   " + st.Label, _dim);
+                        foreach (var sub in st.Page() ?? new System.Collections.Generic.List<UltraPuck.ModSetting>())
+                        {
+                            if (sub.IsToggle)
+                            {
+                                var v = GUILayout.Toggle(sub.Index == 1, "      " + sub.Label);
+                                if (v != (sub.Index == 1)) sub.Index = v ? 1 : 0;
+                                continue;
+                            }
+                            GUILayout.BeginHorizontal();
+                            GUILayout.Label("      " + sub.Label, GUILayout.Width(140f));
+                            for (var i = 0; i < sub.Options.Length; i++)
+                                if (GUILayout.Toggle(sub.Index == i, sub.Options[i], GUI.skin.button) && sub.Index != i) sub.Index = i;
+                            GUILayout.EndHorizontal();
+                        }
+                        continue;
+                    }
                     GUILayout.BeginHorizontal();
                     GUILayout.Label("   " + st.Label, GUILayout.Width(120f));
                     for (var i = 0; i < st.Options.Length; i++)

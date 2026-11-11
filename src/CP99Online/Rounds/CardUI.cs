@@ -41,6 +41,38 @@ namespace CP99Online.Rounds
 
             if (picking && Time.realtimeSinceStartup - CardGame.PhaseStartedAt > CardGame.InputDelay) HandleInput();
             if (!CardGame.PhaseActive) { _cursor.Clear(); _lastX.Clear(); }
+            PanelToggle();
+        }
+
+        // ------------------------------------------------------------------ hide / show the corner panel
+
+        private bool _backDown, _backMissing;
+        private float _backDownAt;
+
+        /// <summary>
+        /// Tap Back/Select (or press Tab) to hide or show everyone's cards in the corner during play.
+        /// Holding Back still opens the mod menu (ModMenu opens it after 0.8 s), so only short taps count.
+        /// </summary>
+        private void PanelToggle()
+        {
+            var rm = RoundsMode.Instance;
+            if (rm == null || CardGame.Seats.Count == 0) return;
+            var gm = Globals.gameManager;
+            var paused = gm.pauseMenuManager != null && gm.pauseMenuManager.paused;
+
+            var back = false;
+            if (!_backMissing)
+            {
+                try { back = Input.GetButton("Back_ALL"); }
+                catch (System.ArgumentException) { _backMissing = true; }
+            }
+            var now = Time.realtimeSinceStartup;
+            var tapped = false;
+            if (back && !_backDown) { _backDown = true; _backDownAt = now; }
+            else if (!back && _backDown) { _backDown = false; tapped = now - _backDownAt < 0.5f; }
+
+            if ((tapped || Input.GetKeyDown(KeyCode.Tab)) && !paused && !ModMenu.IsOpen)
+                rm.ShowDuringPlay.Value = !rm.ShowDuringPlay.Value;
         }
 
         private void RestoreCursor()
@@ -154,19 +186,24 @@ namespace CP99Online.Rounds
         private void DrawPicking(float u)
         {
             var team = CardGame.TeamMode;
-            Label(new Rect(0, 26 * u, Screen.width, 50 * u), team ? "VOTE FOR YOUR TEAM'S CARD" : "PICK A CARD", _title);
-            var left = CardGame.SecondsLeft;
-            var sub = (team ? "Your team gets the card with the most votes (ties are random)." : "Your card lasts for the rest of the match.") +
-                "   " + CardGame.PickedCount + "/" + CardGame.PickerCount + " picked" +
-                (left >= 0f ? "   " + Mathf.CeilToInt(left) + "s" : string.Empty);
-            Label(new Rect(0, 72 * u, Screen.width, 26 * u), sub, _sub);
-
             var rows = LocalPickers();
+            var left = CardGame.SecondsLeft;
+            var progress = "   " + CardGame.PickedCount + "/" + CardGame.PickerCount + " picked" +
+                (left >= 0f ? "   " + Mathf.CeilToInt(left) + "s" : string.Empty);
             if (rows.Count == 0)
             {
-                Label(new Rect(0, Screen.height * 0.42f, Screen.width, 40 * u), "Waiting for the other players to pick...", _title);
+                // This PC isn't picking (its players scored): show who is.
+                var picker = CardGame.Seats.FirstOrDefault(s => s.Offer.Length > 0);
+                var who = new GUIStyle(_title);
+                if (picker != null) who.normal.textColor = TeamColor(picker.Team);
+                Label(new Rect(0, Screen.height * 0.38f, Screen.width, 44 * u),
+                    picker != null ? "TEAM " + (picker.Team + 1) + " IS PICKING A CATCH-UP CARD" : "PICKING CARDS", who);
+                Label(new Rect(0, Screen.height * 0.38f + 46 * u, Screen.width, 26 * u), progress.Trim(), _sub);
                 return;
             }
+            Label(new Rect(0, 26 * u, Screen.width, 50 * u), team ? "VOTE FOR YOUR TEAM'S CATCH-UP CARD" : "PICK A CATCH-UP CARD", _title);
+            var sub = (team ? "Your team gets the card with the most votes (ties are random)." : "Your card lasts for the rest of the match.") + progress;
+            Label(new Rect(0, 72 * u, Screen.width, 26 * u), sub, _sub);
             var top = 112 * u;
             var avail = Screen.height * 0.70f;
             var rowH = avail / rows.Count;
@@ -244,7 +281,7 @@ namespace CP99Online.Rounds
             var w = Mathf.Min(Mathf.Max(Screen.width * 0.5f, 200 * u), 140 * u + widest);
             var box = new Rect(10 * u, Screen.height - h - 10 * u, w, h);
             Fill(box, new Color(0f, 0f, 0f, CardGame.PhaseActive ? 0.75f : 0.45f));
-            Label(new Rect(box.x + 8 * u, box.y + 4 * u, w, 22 * u), "CARDS", _small);
+            Label(new Rect(box.x + 8 * u, box.y + 4 * u, w, 22 * u), CardGame.PhaseActive ? "CARDS" : "CARDS   (Back / Tab: hide)", _small);
             var mouse = Event.current.mousePosition;
             var y = box.y + 28 * u;
             foreach (var s in seats)

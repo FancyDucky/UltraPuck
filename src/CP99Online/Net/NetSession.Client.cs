@@ -164,6 +164,9 @@ namespace CP99Online.Net
                 case Msg.CardState:
                     ClientHandleCards(r);
                     break;
+                case Msg.CardShot:
+                    ClientHandleShot(r);
+                    break;
                 case Msg.Nav:
                     _navMenu = r.Str();
                     _navElement = r.Str();
@@ -635,7 +638,9 @@ namespace CP99Online.Net
                     }
                     case Ev.Shove:
                     {
-                        var b = Match.Ball(r.U8());
+                        var shoveSlot = r.U8();
+                        UltraPuck.DashTracker.OnRemoteShove(shoveSlot);
+                        var b = Match.Ball(shoveSlot);
                         if (b == null) break;
                         var fx = UnityEngine.Object.Instantiate(pm.thrustParticlePrefab, b.transform.position, b.transform.rotation) as GameObject;
                         fx.GetComponent<ThrustParticles>().player = b.gameObject;

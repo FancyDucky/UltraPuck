@@ -106,6 +106,39 @@ namespace CP99Online.Net
             _conns.Values.First().SendReliable(_msg, Now);
         }
 
+        /// <summary>Host: a Puck Gun shot was fired (clients draw it; the host decides what it hits).</summary>
+        internal void HostSendShot(ushort id, int team, UnityEngine.Vector2 pos, UnityEngine.Vector2 vel)
+        {
+            if (_clients.Count == 0) return;
+            Begin(Msg.CardShot);
+            _msg.U8(0);
+            _msg.U16(id);
+            _msg.U8(team);
+            _msg.F32(pos.x); _msg.F32(pos.y);
+            _msg.F32(vel.x); _msg.F32(vel.y);
+            BroadcastReliable();
+        }
+
+        internal void HostSendShotEnd(ushort id)
+        {
+            if (_clients.Count == 0) return;
+            Begin(Msg.CardShot);
+            _msg.U8(1);
+            _msg.U16(id);
+            BroadcastReliable();
+        }
+
+        private void ClientHandleShot(Reader r)
+        {
+            var kind = r.U8();
+            var id = r.U16();
+            if (kind == 1) { CardObjects.EndShot(id); return; }
+            int team = r.U8();
+            var pos = new UnityEngine.Vector2(r.F32(), r.F32());
+            var vel = new UnityEngine.Vector2(r.F32(), r.F32());
+            if (Match.Active) CardObjects.ClientShot(id, team, pos, vel);
+        }
+
         private void HostHandleCardPick(ClientInfo ci, Reader r)
         {
             int seat = r.U8();

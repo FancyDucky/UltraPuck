@@ -4,7 +4,7 @@ An UltraPuck mod is a small C# `.dll`. Players put it in the **`Mods` folder** i
 (next to `ClusterPuck99.exe`) and restart the game. It then appears in **Main menu > Mods** (and in the F8 menu).
 From there they can turn it on and off and change its settings.
 
-The built-in **FPS+**, **Smooth Motion**, **Better Boost** and **Rounds Mode** mods use the same system. Online play is part of UltraPuck itself,
+The built-in **FPS+**, **Smooth Motion**, **Better Boost**, **Dash Meter** and **Rounds Mode** mods use the same system. Online play is part of UltraPuck itself,
 so it isn't in the list and can't be turned off.
 
 ## Quick start
@@ -74,6 +74,16 @@ public override void OnLoad()
 
 Read them with `_trail.Value` and `_power.Value`.
 
+For a longer list, use a page: the mod's page shows one "Label >" item that opens its own list. Rounds Mode's
+Toggle Cards page is built this way:
+
+```csharp
+AddPage("Toggle Colours", () => colours.Select(c =>
+    ModSetting.Toggle(c.Name, () => c.Enabled, v => c.Enabled = v)).ToList());
+```
+
+A page of On/Off settings also gets "Turn All On" and "Turn All Off" items.
+
 ## Changing the game: Harmony patches
 
 To find what to change, open the game's code in a decompiler such as
@@ -130,7 +140,12 @@ public class MyMod : UltraMod
 }
 ```
 
-`CardStats` has `MoveSpeed`, `ShotPower`, `Weight` and `DashCooldown` (multipliers), plus `ExtraDashes`.
+`CardStats` has these multipliers (1 = no change):
+- `MoveSpeed`, `ShotPower`, `ChargeSpeed`, `DashCooldown`, `PickupRange` and `Size`.
+- `Weight`, which only changes how much knockback you take; movement and dash are corrected for it.
+- `OpponentSpeed`, which slows every opponent.
+
+It also has `ExtraDashes`, `SpawnCloser` (0.15 = 15% closer to the puck at each face-off), `Pylons` and `PuckGun`.
 For anything else, override `ApplyToBall(BallData ball, int copies)`. It runs on the player's ball when they
 get the card and after every field reset.
 

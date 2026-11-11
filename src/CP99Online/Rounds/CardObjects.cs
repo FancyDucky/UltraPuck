@@ -1,0 +1,274 @@
+using System.Collections.Generic;
+using System.Linq;
+using CP99Online.Net;
+using UnityEngine;
+
+namespace CP99Online.Rounds
+{
+    /// <summary>Things cards put into the arena: Pylon Goalie dummies and Puck Gun shots.</summary>
+    internal static class CardObjects
+    {
+        // ------------------------------------------------------------------ Pylon Goalie
+
+        private static readonly List<GameObject> _pylons = new List<GameObject>();
+        private static string _pylonSig;
+
+        internal static void Clear()
+        {
+            foreach (var p in _pylons) if (p != null) Object.Destroy(p);
+            _pylons.Clear();
+            _pylonSig = null;
+            _gunReadyAt.Clear();
+            foreach (var s in _shots.Values) if (s != null) Object.Destroy(s.gameObject);
+            _shots.Clear();
+        }
+
+        internal static bool IsPylon(Collider2D c) { return c != null && c.gameObject.name == PylonName; }
+        private const string PylonName = "UltraPuck_Pylon";
+
+        /// <summary>Make sure each team has the given number of pylons in front of its net (every PC builds its own).</summary>
+        internal static void SetPylons(Dictionary<int, int> perTeam)
+        {
+            var sig = string.Join(",", perTeam.Where(kv => kv.Value > 0).OrderBy(kv => kv.Key).Select(kv => kv.Key + ":" + kv.Value).ToArray());
+            if (sig == _pylonSig && _pylons.All(p => p != null)) return;
+            _pylonSig = sig;
+            foreach (var p in _pylons) if (p != null) Object.Destroy(p);
+            _pylons.Clear();
+
+            var gm = Globals.gameManager;
+            if (gm == null) return;
+            foreach (var kv in perTeam)
+            {
+                if (kv.Value <= 0 || kv.Key < 0 || kv.Key >= gm.teams.Count) continue;
+                var team = gm.teams[kv.Key];
+                Vector3 spot, outward;
+                if (!GoalieSpot(gm, team, out spot, out outward)) continue;
+                var side = new Vector3(-outward.y, outward.x, 0f);
+                var n = Mathf.Min(kv.Value, 4);
+                for (var i = 0; i < n; i++)
+                {
+                    var offset = (i - (n - 1) / 2f) * 1.1f;
+                    var p = MakePylon(team, spot + side * offset);
+                    if (p != null) _pylons.Add(p);
+                }
+                NetLog.Info("Rounds: " + n + " pylon(s) in front of team " + (kv.Key + 1) + "'s net at " + spot);
+            }
+        }
+
+        /// <summary>The game's goalie position in front of a team's net, and the direction out of the net.</summary>
+        private static bool GoalieSpot(GameManager gm, TeamData team, out Vector3 spot, out Vector3 outward)
+        {
+            spot = outward = Vector3.zero;
+            var node = team.goalieNodes;
+            var goal = team.goalNode;
+            if (node == null && goal == null) return false;
+            if (node != null)
+            {
+                spot = node.transform.position;
+                if (node.transform.childCount > 0)
+                {
+                    var sum = Vector3.zero;
+                    foreach (Transform c in node.transform) sum += c.position;
+                    spot = sum / node.transform.childCount;
+                }
+            }
+            var goalPos = goal != null ? goal.transform.position : spot;
+            var other = team.otherGoalNode != null ? team.otherGoalNode.transform.position : Vector3.zero;
+            outward = (other - goalPos);
+            outward.z = 0f;
+            outward = outward.sqrMagnitude > 0.01f ? outward.normalized : Vector3.up;
+            if (node == null) spot = goalPos + outward * 2f;
+            return true;
+        }
+
+        private static GameObject MakePylon(TeamData team, Vector3 at)
+        {
+            var template = team.members.FirstOrDefault(m => m != null && m.ballMesh != null);
+            if (template == null) return null;
+            var root = new GameObject(PylonName);
+            root.layer = template.gameObject.layer;
+            root.transform.position = new Vector3(at.x, at.y, template.transform.position.z);
+
+            // Same size and collision as a normal (card-free) player.
+            var col = root.AddComponent<CircleCollider2D>();
+            var tc = template.GetComponent<CircleCollider2D>();
+            var baseScale = template.transform.localScale;
+            col.radius = tc != null ? tc.radius * Mathf.Max(baseScale.x, baseScale.y) : 0.4f;
+            var rb = root.AddComponent<Rigidbody2D>();
+            rb.isKinematic = true; // stays put; players and the puck bounce off it
+
+            var mesh = (GameObject)Object.Instantiate(template.ballMesh);
+            mesh.SetActive(true);
+            foreach (var mb in mesh.GetComponentsInChildren<MonoBehaviour>(true)) Object.DestroyImmediate(mb);
+            foreach (var c in mesh.GetComponentsInChildren<Collider2D>(true)) Object.DestroyImmediate(c);
+            foreach (var c in mesh.GetComponentsInChildren<Collider>(true)) Object.DestroyImmediate(c);
+            foreach (var ps in mesh.GetComponentsInChildren<ParticleSystem>(true)) Object.DestroyImmediate(ps.gameObject);
+            mesh.transform.SetParent(root.transform, false);
+            mesh.transform.localPosition = template.ballMesh.transform.localPosition;
+            mesh.transform.localRotation = template.ballMesh.transform.localRotation;
+            mesh.transform.localScale = Vector3.Scale(template.ballMesh.transform.localScale, baseScale);
+            // A bit darker so it reads as a dummy, not a player.
+            foreach (var r in mesh.GetComponentsInChildren<Renderer>(true))
+                foreach (var m in r.materials)
+                    if (m.HasProperty("_Color")) m.color = Color.Lerp(m.color, Color.gray, 0.45f);
+            return root;
+        }
+
+        // ------------------------------------------------------------------ Puck Gun
+
+        internal const float GunCooldown = 60f;
+        private const float ShotSpeed = 26f, ShotRadius = 0.25f, ShotLife = 4f;
+
+        private static readonly Dictionary<BallData, float> _gunReadyAt = new Dictionary<BallData, float>();
+        private static readonly Dictionary<ushort, PuckGunShot> _shots = new Dictionary<ushort, PuckGunShot>();
+        private static ushort _nextShot = 1;
+
+        /// <summary>Seconds until this player's Puck Gun is ready (0 = ready).</summary>
+        internal static float GunCooldownLeft(BallData b)
+        {
+            float t;
+            return b != null && _gunReadyAt.TryGetValue(b, out t) ? Mathf.Max(0f, t - Time.time) : 0f;
+        }
+
+        /// <summary>Tests: make this player's Puck Gun ready now.</summary>
+        internal static void ResetGunCooldown(BallData b) { _gunReadyAt.Remove(b); }
+
+        /// <summary>Host / offline: a player with Puck Gun dashed.</summary>
+        internal static void TryFirePuckGun(BallData b)
+        {
+            if (GunCooldownLeft(b) > 0f) return;
+            _gunReadyAt[b] = Time.time + GunCooldown;
+            var dir = (Vector2)b.transform.up;
+            var pos = (Vector2)b.transform.position + dir * (CardEffects.Radius(b.GetComponent<Collider2D>()) + ShotRadius + 0.05f);
+            var id = _nextShot++;
+            var team = Globals.gameManager.teams.IndexOf(b.team);
+            Spawn(id, team, pos, dir * ShotSpeed, b, true);
+            if (NetSession.HostInMatch) NetSession.Instance.HostSendShot(id, team, pos, dir * ShotSpeed);
+            NetLog.Info("Rounds: Puck Gun fired by " + (b.playerData != null && b.playerData.account != null ? b.playerData.account.name : "?"));
+        }
+
+        /// <summary>Client: the host fired a shot (visual only; the host decides what it hits).</summary>
+        internal static void ClientShot(ushort id, int team, Vector2 pos, Vector2 vel) { Spawn(id, team, pos, vel, null, false); }
+
+        internal static void EndShot(ushort id)
+        {
+            PuckGunShot s;
+            if (_shots.TryGetValue(id, out s)) { _shots.Remove(id); if (s != null) Object.Destroy(s.gameObject); }
+        }
+
+        private static void Spawn(ushort id, int team, Vector2 pos, Vector2 vel, BallData owner, bool authority)
+        {
+            var gm = Globals.gameManager;
+            if (gm == null) return;
+            var color = Color.white;
+            try { color = ColorManager.GetColor(gm.teams[team].teamColor); } catch { }
+            var z = owner != null ? owner.transform.position.z : (gm.puck != null ? gm.puck.transform.position.z : 0f);
+
+            var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            go.name = "UltraPuck_PuckGunShot";
+            Object.DestroyImmediate(go.GetComponent<Collider>());
+            go.transform.position = new Vector3(pos.x, pos.y, z - 0.3f);
+            go.transform.localScale = Vector3.one * ShotRadius * 2f;
+            var r = go.GetComponent<Renderer>();
+            r.material.color = Color.Lerp(color, Color.white, 0.2f);
+            var trail = go.AddComponent<TrailRenderer>();
+            var shader = Shader.Find("Sprites/Default") ?? Shader.Find("Particles/Alpha Blended");
+            if (shader != null) trail.material = new Material(shader);
+            trail.time = 0.25f;
+            trail.startWidth = ShotRadius * 1.6f;
+            trail.endWidth = 0f;
+            trail.material.color = new Color(color.r, color.g, color.b, 0.8f);
+
+            var shot = go.AddComponent<PuckGunShot>();
+            shot.Id = id; shot.Velocity = vel; shot.Owner = owner; shot.Team = team; shot.Authority = authority;
+            _shots[id] = shot;
+        }
+
+        internal sealed class PuckGunShot : MonoBehaviour
+        {
+            public ushort Id;
+            public Vector2 Velocity;
+            public BallData Owner;
+            public int Team;
+            public bool Authority;
+            private float _age;
+            private int _wallMask;
+
+            private void Start()
+            {
+                _wallMask = 0;
+                foreach (var layer in new[] { "Wall", "Forcefield", "Spike" })
+                {
+                    var l = LayerMask.NameToLayer(layer);
+                    if (l >= 0) _wallMask |= 1 << l;
+                }
+            }
+
+            private void Update()
+            {
+                if (Authority) return; // the host moves its shots in FixedUpdate
+                transform.position += (Vector3)(Velocity * Time.deltaTime);
+                _age += Time.deltaTime;
+                if (_age > ShotLife + 1f) { _shots.Remove(Id); Destroy(gameObject); }
+            }
+
+            private void FixedUpdate()
+            {
+                if (!Authority) return;
+                var gm = Globals.gameManager;
+                if (gm == null || gm.replayManager.replaying) return;
+                var dt = Time.fixedDeltaTime;
+                _age += dt;
+                var pos = (Vector2)transform.position;
+                var step = Velocity * dt;
+                var hits = Physics2D.CircleCastAll(pos, ShotRadius, Velocity.normalized, step.magnitude);
+                foreach (var hit in hits.OrderBy(h => h.distance))
+                {
+                    var c = hit.collider;
+                    if (c == null || c.isTrigger) continue;
+                    // Players carry extra helper colliders (e.g. "ObstructionCollider" on a *TeamObstruction layer,
+                    // used by the bots): only a player's own body counts as a hit.
+                    var owner = c.GetComponentInParent<BallData>();
+                    if (owner != null && owner.gameObject != c.gameObject) continue;
+                    if (LayerMask.LayerToName(c.gameObject.layer).Contains("Obstruction")) continue;
+                    var ball = c.GetComponent<BallData>();
+                    if (ball != null)
+                    {
+                        if (ball == Owner || !ball.alive || gm.teams.IndexOf(ball.team) == Team) continue; // passes teammates
+                        KnockOut(ball, gm);
+                        End(hit.point);
+                        return;
+                    }
+                    if (c.GetComponent<Puck>() != null) continue; // passes the puck
+                    if (CardObjects.IsPylon(c) || (_wallMask & (1 << c.gameObject.layer)) != 0) // walls; floor and helper colliders are ignored
+                    {
+                        NetLog.Debug("Puck Gun shot " + Id + " stopped by " + c.name + " (layer " + LayerMask.LayerToName(c.gameObject.layer) +
+                            ") after " + _age.ToString("F2") + "s");
+                        End(hit.point);
+                        return;
+                    }
+                }
+                transform.position += (Vector3)step;
+                if (_age > ShotLife) End(transform.position);
+            }
+
+            private void KnockOut(BallData ball, GameManager gm)
+            {
+                var dr = ball.GetComponent<BallDeathRespawn>();
+                if (dr == null) return;
+                dr.Kill();
+                dr.StartRespawn();
+                var sm = gm.soundManager;
+                if (sm != null && sm.splatSound != null) sm.CreateSound(sm.splatSound, 2f, 0.75f, Random.Range(0.95f, 1.05f));
+                NetLog.Info("Rounds: Puck Gun knocked out " + (ball.playerData != null && ball.playerData.account != null ? ball.playerData.account.name : "?"));
+            }
+
+            private void End(Vector2 at)
+            {
+                _shots.Remove(Id);
+                if (NetSession.HostInMatch) NetSession.Instance.HostSendShotEnd(Id);
+                Destroy(gameObject);
+            }
+        }
+    }
+}

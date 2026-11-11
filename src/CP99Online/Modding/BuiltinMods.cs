@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using CP99Online;
 
 namespace UltraPuck
@@ -118,9 +120,28 @@ namespace UltraPuck
             Choices = AddChoice("Choices", "Cards Offered", 3, new[] { 3, 4, 5 });
             PickTime = AddChoice("PickTime", "Pick Time", "30s", PickTimes,
                 description: "How long players have to pick. Anyone who hasn't picked gets a random card.");
-            ShowDuringPlay = AddToggle("ShowDuringPlay", "Cards During Play", true,
-                "Show everyone's cards in the lower corner during play (hover for details).");
+            ShowDuringPlay = AddChoice("ShowDuringPlay", "Corner Card List", true, new[] { true, false }, v => v ? "Shown" : "Hidden",
+                "The list of everyone's cards in the lower-left corner during play (hover a card for details). " +
+                "Tap Back/Select or press Tab in a match to hide or show it.");
+            AddPage("Toggle Cards", () => Cards.All.Select(c => ModSetting.Toggle(c.Name,
+                () => CardEnabled(c.Id), v => CardEntry(c.Id).Value = v, c.Description)).ToList<ModSetting>(),
+                "Choose which cards can be offered. Online, the host's choice applies.");
         }
+
+        private readonly Dictionary<string, BepInEx.Configuration.ConfigEntry<bool>> _cardEntries = new Dictionary<string, BepInEx.Configuration.ConfigEntry<bool>>();
+
+        private BepInEx.Configuration.ConfigEntry<bool> CardEntry(string id)
+        {
+            BepInEx.Configuration.ConfigEntry<bool> e;
+            if (!_cardEntries.TryGetValue(id, out e))
+                _cardEntries[id] = e = Config.Bind(Section, "Card." + id, true, "Whether the card " + id + " can be offered.");
+            return e;
+        }
+
+        private bool CardEnabled(string id) { return CardEntry(id).Value; }
+
+        /// <summary>Can this card be offered? (Mods > Rounds Mode > Toggle Cards.)</summary>
+        internal static bool IsCardEnabled(string id) { return Instance == null || Instance.Config == null || Instance.CardEnabled(id); }
 
         public override void OnEnable() { }
         public override void OnDisable() { }

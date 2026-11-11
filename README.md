@@ -5,12 +5,14 @@ A mod for [ClusterPuck 99](https://store.steampowered.com/app/337960/) that adds
 - **Online multiplayer** — host through Steam (friends-only lobby + invites, no port forwarding) or direct IP.
   Everyone shares the real player select screen (own profile, team) and watches the host pick the arena and mode.
 - **Mod manager**: Main menu > Mods lists every mod. Select one to turn it on or off and change its settings.
-  Built-in mods: **FPS+** (60 / 120 / 144 / 240 / unlimited), **Smooth Motion** (no jittery players and name tags) and
-  **Better Boost** (no slowdown after boosting).
+  Built-in mods: **FPS+** (60 / 120 / 144 / 240 / unlimited), **Smooth Motion** (no jittery players and name tags),
+  **Better Boost** (no slowdown after boosting) and **Dash Meter** (a small bar above each player shows when their dash is
+  ready, one segment per charge).
 - **Rounds Mode** (built-in mod, off by default): after each goal everyone picks one of a few random cards that
   power them up for the rest of the match (Double Dash, Speed Up, Power Shot, ...). Online, each player sees only
   their own cards; everyone's cards show in the lower-left corner (hover for details). Setting: each player picks,
-  or each team votes for one card (ties are random). Mods can add cards.
+  or each team votes for one card (ties are random). Rounds Mode > Toggle Cards turns individual cards on or off.
+  Mods can add cards.
 - **Make your own mods**: drop a `.dll` in the game's `Mods` folder. See [docs/MAKING-MODS.md](docs/MAKING-MODS.md)
   and [examples/ExampleMod](examples/ExampleMod).
 - **Play Online** and **Mods** entries in the game's own main menu (keyboard and controller).
