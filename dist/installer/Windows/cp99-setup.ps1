@@ -160,8 +160,8 @@ function Install-Mod($game) {
     Say "Done! Installed $count files into:" 'Green'
     Say "  $game" 'Green'
     Say ''
-    Say 'Launch ClusterPuck 99 from Steam and press F8 for the mod menu.'
-    Say 'To play together: F8 > Online > Host with Steam, then invite friends. Friends need this mod too.'
+    Say 'Launch ClusterPuck 99 from Steam. The main menu gets Play Online and Mods entries.'
+    Say 'To play together: Play Online > Host Game, then Invite Friends. Friends need this mod too.'
 }
 
 # ----------------------------------------------------------------------------- uninstall

@@ -10,7 +10,7 @@ MODE="${1:-install}"
 GAME="${2:-}"
 APPID=337960
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PAYLOAD="$(dirname "$HERE")/files-mac"
+PAYLOAD="$(dirname "$HERE")/files"
 
 say()  { printf '%s\n' "$*"; }
 ok()   { printf '\033[32m%s\033[0m\n' "$*"; }

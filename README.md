@@ -16,12 +16,13 @@ A mod for [ClusterPuck 99](https://store.steampowered.com/app/337960/) that adds
 
 ## Install
 
-Download the latest `UltraPuck-<version>.zip` from [Releases](../../releases), extract it, then:
+Download the latest `UltraPuck-<version>.zip` from [Releases](../../releases) and extract it. It has one folder per
+system; open yours:
 
-- **Windows:** double-click `Install UltraPuck.bat`.
-- **Linux / Steam Deck:** in a terminal in the extracted folder run `bash install-linux.sh`, then set the game's
+- **`Windows`:** double-click `Install UltraPuck.bat`.
+- **`Linux and Steam Deck`:** in a terminal in that folder run `bash install-linux.sh`, then set the game's
   Steam launch options to `WINEDLLOVERRIDES="winhttp=n,b" %command%`.
-- **Mac:** in Terminal run `bash install-mac.sh` from the extracted folder, then paste the launch options line it
+- **`Mac`:** in Terminal run `bash install-mac.sh` from that folder, then paste the launch options line it
   copies for you (`"<game folder>/run_bepinex.sh" %command%`) into the game's Steam Launch Options.
 
 Everyone playing together needs the mod. See `README.txt` in the zip for hosting/joining steps.
@@ -51,7 +52,7 @@ Layout:
 - `src/CP99Online` — the BepInEx plugin (Harmony patches, networking, menus). `Modding/` holds the mod API.
 - `examples/ExampleMod` — a small mod to copy when making your own.
 - `docs/MAKING-MODS.md` — guide for mod makers.
-- `dist/installer` — Windows/Linux install & uninstall scripts.
+- `dist/installer` — install & uninstall scripts in `Windows/`, `Linux/` and `Mac/`, plus the README shipped in the zip.
 - `dist/payload` — BepInEx 5.4.23.5 (x86) set up for this game (Camera entrypoint), shipped inside the zip.
 - `dist/payload-mac` — BepInEx 5.4.23.5 for macOS (universal `libdoorstop.dylib` + `run_bepinex.sh`); the zip adds
   the same config and plugin.
