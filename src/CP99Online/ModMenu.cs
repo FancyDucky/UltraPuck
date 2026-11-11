@@ -249,8 +249,12 @@ namespace CP99Online
                 foreach (var l in SteamLobby.Lobbies.ToList())
                 {
                     GUILayout.BeginHorizontal();
-                    GUILayout.Label((string.IsNullOrEmpty(l.HostName) ? "Unknown host" : l.HostName) + "  (" + l.Members + " in lobby)");
+                    var blocked = !string.IsNullOrEmpty(l.Note);
+                    GUILayout.Label((string.IsNullOrEmpty(l.HostName) ? "Unknown host" : l.HostName) +
+                        (l.Members > 0 ? "  (" + l.Members + " in lobby)" : string.Empty) + (blocked ? "  - " + l.Note : string.Empty));
+                    GUI.enabled = !blocked;
                     if (GUILayout.Button("Join", GUILayout.Width(60f))) SteamLobby.Join(l.Lobby);
+                    GUI.enabled = true;
                     GUILayout.EndHorizontal();
                 }
                 GUILayout.EndScrollView();

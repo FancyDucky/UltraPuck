@@ -13,8 +13,7 @@ namespace CP99Online.Rounds
             foreach (var p in _pylons) if (p != null && p.Root != null) Object.Destroy(p.Root);
             _pylons.Clear();
             _pylonSig = null;
-            _gunReadyAt.Clear();
-            _clientGunReadyAt.Clear();
+            Stun.Clear();
             foreach (var s in _shots.Values) if (s != null) Object.Destroy(s.gameObject);
             _shots.Clear();
         }
@@ -175,32 +174,15 @@ namespace CP99Online.Rounds
 
         // ------------------------------------------------------------------ Puck Gun
 
-        internal const float GunCooldown = 10f;
+        // Fired on every dash (so the dash cooldown limits it). A hit stuns the opponent (see Stun).
         private const float ShotSpeed = 26f, ShotRadius = 0.25f, ShotLife = 4f;
 
-        private static readonly Dictionary<BallData, float> _gunReadyAt = new Dictionary<BallData, float>();
-        private static readonly Dictionary<int, float> _clientGunReadyAt = new Dictionary<int, float>(); // by slot
         private static readonly Dictionary<ushort, PuckGunShot> _shots = new Dictionary<ushort, PuckGunShot>();
         private static ushort _nextShot = 1;
 
-        /// <summary>Seconds until this player's Puck Gun is ready (0 = ready). Works on every PC.</summary>
-        internal static float GunCooldownLeft(BallData b)
-        {
-            if (b == null) return 0f;
-            float t;
-            if (NetSession.ClientInMatch)
-                return _clientGunReadyAt.TryGetValue(Match.Slot(b), out t) ? Mathf.Max(0f, t - Time.time) : 0f;
-            return _gunReadyAt.TryGetValue(b, out t) ? Mathf.Max(0f, t - Time.time) : 0f;
-        }
-
-        /// <summary>Tests: make this player's Puck Gun ready now.</summary>
-        internal static void ResetGunCooldown(BallData b) { _gunReadyAt.Remove(b); }
-
         /// <summary>Host / offline: a player with Puck Gun dashed.</summary>
-        internal static void TryFirePuckGun(BallData b)
+        internal static void FirePuckGun(BallData b)
         {
-            if (GunCooldownLeft(b) > 0f) return;
-            _gunReadyAt[b] = Time.time + GunCooldown;
             var dir = (Vector2)b.transform.up;
             var pos = (Vector2)b.transform.position + dir * (CardEffects.Radius(b.GetComponent<Collider2D>()) + ShotRadius + 0.05f);
             var id = _nextShot++;
@@ -213,7 +195,6 @@ namespace CP99Online.Rounds
         /// <summary>Client: the host fired a shot (visual only; the host decides what it hits).</summary>
         internal static void ClientShot(ushort id, int team, int slot, Vector2 pos, Vector2 vel)
         {
-            if (slot >= 0) _clientGunReadyAt[slot] = Time.time + GunCooldown;
             Spawn(id, team, pos, vel, null, false);
         }
 
@@ -299,7 +280,7 @@ namespace CP99Online.Rounds
                     if (ball != null)
                     {
                         if (ball == Owner || !ball.alive || gm.teams.IndexOf(ball.team) == Team) continue; // passes teammates
-                        KnockOut(ball, gm);
+                        Stun.Hit(ball, Velocity.normalized);
                         End();
                         return;
                     }
@@ -312,17 +293,6 @@ namespace CP99Online.Rounds
                 }
                 transform.position += (Vector3)step;
                 if (_age > ShotLife) End();
-            }
-
-            private static void KnockOut(BallData ball, GameManager gm)
-            {
-                var dr = ball.GetComponent<BallDeathRespawn>();
-                if (dr == null) return;
-                dr.Kill();
-                dr.StartRespawn();
-                var sm = gm.soundManager;
-                if (sm != null && sm.splatSound != null) sm.CreateSound(sm.splatSound, 2f, 0.75f, Random.Range(0.95f, 1.05f));
-                NetLog.Info("Rounds: Puck Gun knocked out " + (ball.playerData != null && ball.playerData.account != null ? ball.playerData.account.name : "?"));
             }
 
             private void End()

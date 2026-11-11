@@ -14,7 +14,7 @@ namespace CP99Online
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "cp99.online";
-        public const string Version = "0.8.2";
+        public const string Version = "0.8.3";
 
         internal static ManualLogSource Logger_;
         internal static ConfigEntry<bool> NoBoostSlowdown;
@@ -93,13 +93,14 @@ namespace CP99Online
             gameObject.AddComponent<ModMenu>();
             gameObject.AddComponent<Toast>();
             gameObject.AddComponent<Rounds.CardUI>();
-            gameObject.AddComponent<Rounds.GunBarView>();
+            gameObject.AddComponent<Rounds.StunBarView>();
             gameObject.AddComponent<TestHarness>();
             SceneDump.Dir = Path.GetDirectoryName(Info.Location);
             gameObject.AddComponent<SceneDump>();
             gameObject.AddComponent<MenuTest>();
             DllPath = Info.Location;
             gameObject.AddComponent<Updater>();
+            gameObject.AddComponent<Branding>();
             Logger.LogInfo("Mod menu ready (" + MenuKey.Value + " or hold the gamepad View/Back button)" +
                 (IsSteamDeck ? " - Steam Deck" : string.Empty));
         }

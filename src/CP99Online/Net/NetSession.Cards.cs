@@ -129,9 +129,21 @@ namespace CP99Online.Net
             BroadcastReliable();
         }
 
+        /// <summary>Host: a Puck Gun hit stunned this slot (clients draw the stun bar).</summary>
+        internal void HostSendStun(int slot, float seconds)
+        {
+            if (_clients.Count == 0) return;
+            Begin(Msg.CardShot);
+            _msg.U8(2);
+            _msg.U8(slot);
+            _msg.F32(seconds);
+            BroadcastReliable();
+        }
+
         private void ClientHandleShot(Reader r)
         {
             var kind = r.U8();
+            if (kind == 2) { int stunSlot = r.U8(); var secs = r.F32(); if (Match.Active) Stun.ClientStunned(stunSlot, secs); return; }
             var id = r.U16();
             if (kind == 1) { CardObjects.EndShot(id); return; }
             int team = r.U8();

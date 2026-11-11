@@ -38,6 +38,7 @@ namespace CP99Online
             // so settings change in place and the friend list replaces the Play Online items while browsing)
             var online = ModPanel.Create(optionsPanel, "CP99_Online", "Play Online", main, true, OnlineItems, OnlineKey);
             online.OnOpen = () => _browsing = false;
+            online.List.tintColor = new Color(0.88f, 0.58f, 0.72f, 1f); // soft pink (Options, which it was copied from, is grey)
             var mods = ModPanel.Create(optionsPanel, "CP99_Mods", "Mods", main, true, ModsItems, ModsKey);
             mods.OnOpen = () => { _modPage = null; _lastMod = null; _subPage = null; _lastSub = null; _listPage = 0; };
             ModsPanel = mods;
@@ -147,7 +148,7 @@ namespace CP99Online
 
         private static string LobbyKey()
         {
-            return SteamLobby.Lobbies.Count + "|" + string.Join(",", SteamLobby.Lobbies.Select(l => l.Lobby.m_SteamID.ToString()).ToArray());
+            return SteamLobby.Lobbies.Count + "|" + string.Join(",", SteamLobby.Lobbies.Select(l => l.Lobby.m_SteamID + ":" + l.HostName + ":" + l.Members + ":" + l.Note).ToArray());
         }
 
         private static List<Item> LobbyItems()
@@ -156,8 +157,12 @@ namespace CP99Online
             foreach (var l in SteamLobby.Lobbies.ToList())
             {
                 var lobby = l;
-                items.Add(Item.Action(() => (string.IsNullOrEmpty(lobby.HostName) ? "Unknown host" : lobby.HostName) + " (" + lobby.Members + ")",
-                    () => { _browsing = false; SteamLobby.Join(lobby.Lobby); }));
+                var label = (string.IsNullOrEmpty(lobby.HostName) ? "Unknown host" : lobby.HostName) +
+                    (lobby.Members > 0 ? " (" + lobby.Members + ")" : string.Empty);
+                if (!string.IsNullOrEmpty(lobby.Note) && lobby.Note != "checking...")
+                    items.Add(Item.Info(() => label + ": " + lobby.Note));
+                else
+                    items.Add(Item.Action(() => label, () => { _browsing = false; SteamLobby.Join(lobby.Lobby); }));
             }
             items.Add(Item.Action(() => "Refresh", SteamLobby.Refresh));
             items.Add(Item.Action(() => "Back", () => _browsing = false));

@@ -121,7 +121,8 @@ public class GlassCannonCard : UltraCard
 {
     public override string Id          { get { return "yourname.glasscannon"; } } // unique, same on every PC
     public override string Name        { get { return "Glass Cannon"; } }
-    public override string Description { get { return "Shots 50% stronger, but 30% lighter."; } }
+    public override string Description { get { return CardText.Stat(1.5f, "Shot Power", true) + "\n" +
+                                                       CardText.Stat(1f / 0.7f, "Knockback Taken", false); } }
     public override Color Color        { get { return new Color(0.9f, 0.4f, 0.9f); } }
     public override int MaxPerPlayer   { get { return 2; } }     // 0 = no limit
     public override float Rarity       { get { return 0.5f; } }  // offered half as often
@@ -142,12 +143,35 @@ public class MyMod : UltraMod
 
 `CardStats` has these multipliers (1 = no change):
 - `MoveSpeed`, `ShotPower`, `ChargeSpeed`, `DashCooldown`, `PickupRange` and `Size`.
-- `Weight`, which only changes how much knockback you take; movement and dash are corrected for it.
+- `Weight`: heavier means you take less knockback and your dash checks give more. Movement and dash speed are corrected for it.
 - `OpponentSpeed`, which slows every opponent.
 
-It also has `ExtraDashes`, `SpawnCloser` (0.15 = 15% closer to the puck at each face-off), `Pylons` and `PuckGun`.
+It also has `ExtraDashes`, `SpawnCloser` (0.2 = 20% closer to the puck at each face-off), `Pylons` and `PuckGun`.
 For anything else, override `ApplyToBall(BallData ball, int copies)`. It runs on the player's ball when they
 get the card and after every field reset.
+
+### Card text: standard terms and colours
+
+Write descriptions with `CardText`, so every card uses the same words and colours. Green means good for the
+card's owner, red means bad, and gold means neutral. For example, `CardText.Stat(1.15f, "Move Speed", true)`
+shows a green "+15% Move Speed". Use `CardText.Good`, `Bad` and `Neutral` for other text. The players' stats
+tooltip (hover a name in the corner list) uses the same terms:
+
+| Term | Meaning | Good direction |
+| --- | --- | --- |
+| Move Speed | How fast you move | + |
+| Knockback Taken | How far hits (dashes, checks, Puck Gun) push you. It's 1 / `CardStats.Weight`, so Weight 2 = −50% | − |
+| Knockback Given | How far your dash checks push others. It's `CardStats.Weight`, so Weight 2 = +100% | + |
+| Size | Ball size | neutral |
+| Shot Power | How hard your quick and charged shots hit the puck (also raises the puck's speed limit) | + |
+| Charge-up Speed | How fast a charge shot fills | + |
+| Dash Charges | Dashes you can store | + |
+| Dash Recharge | Time for one dash charge to refill (normally 2 s) | − |
+| Pick-up Range | How far away you can grab a loose puck | + |
+| Face-off Distance | How far from the puck you start each face-off | − |
+| Opponent Move Speed | Every opponent's Move Speed | − |
+| Stun | Seconds an opponent can't control their player (they still slide) | + |
+| Pylon Goalie | Dummy players at your net | + |
 
 Online, the host runs the game, so effects only happen on the host. Everyone playing together needs the
 same card mods, so each card shows the right name and description.

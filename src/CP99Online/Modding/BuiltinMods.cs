@@ -81,6 +81,47 @@ namespace UltraPuck
                 : UnityEngine.RigidbodyInterpolation2D.Interpolate;
             foreach (var rb in _bodies)
                 if (rb != null && rb.interpolation != mode) rb.interpolation = mode;
+            if (Probe) RunProbe();
+        }
+
+        // Tests (CP99_SMOOTH_PROBE=1): count frames where a moving ball didn't move on screen (a stall = jitter).
+        private static readonly bool Probe = System.Environment.GetEnvironmentVariable("CP99_SMOOTH_PROBE") == "1";
+        private readonly System.Collections.Generic.Dictionary<UnityEngine.Rigidbody2D, UnityEngine.Vector3> _last = new System.Collections.Generic.Dictionary<UnityEngine.Rigidbody2D, UnityEngine.Vector3>();
+        private readonly System.Collections.Generic.Dictionary<UnityEngine.Rigidbody2D, int[]> _counts = new System.Collections.Generic.Dictionary<UnityEngine.Rigidbody2D, int[]>();
+        private float _nextReport;
+
+        private void RunProbe()
+        {
+            foreach (var rb in _bodies)
+            {
+                if (rb == null) continue;
+                var p = rb.transform.position;
+                UnityEngine.Vector3 was;
+                if (_last.TryGetValue(rb, out was) && rb.velocity.magnitude > 1f && UnityEngine.Time.deltaTime > 0f)
+                {
+                    int[] c;
+                    if (!_counts.TryGetValue(rb, out c)) _counts[rb] = c = new int[3];
+                    c[0]++;
+                    if ((p - was).sqrMagnitude < 1e-8f) c[1]++;
+                    // on-screen speed this frame vs the body's speed: off by more than 40% = an uneven step
+                    var seen = (p - was).magnitude / UnityEngine.Time.deltaTime;
+                    if (UnityEngine.Mathf.Abs(seen - rb.velocity.magnitude) > 0.4f * rb.velocity.magnitude) c[2]++;
+                }
+                _last[rb] = p;
+            }
+            var now = UnityEngine.Time.realtimeSinceStartup;
+            if (now < _nextReport) return;
+            _nextReport = now + 5f;
+            foreach (var kv in _counts)
+            {
+                if (kv.Key == null || kv.Value[0] < 20) continue;
+                var b = kv.Key.GetComponent<BallData>();
+                CP99Online.Net.NetLog.Info("SMOOTH probe " + (b != null && b.playerData != null && b.playerData.account != null ? b.playerData.account.name : kv.Key.name) +
+                    (b != null ? (b.AI ? " (bot)" : " (human)") : " (puck)") +
+                    " moving frames=" + kv.Value[0] + " stalled=" + kv.Value[1] + " uneven=" + kv.Value[2] + " fps=" + (1f / UnityEngine.Time.smoothDeltaTime).ToString("F0") +
+                    " interp=" + kv.Key.interpolation);
+            }
+            _counts.Clear();
         }
 
         private void Track(UnityEngine.Rigidbody2D rb)
@@ -124,7 +165,7 @@ namespace UltraPuck
                 "The list of everyone's cards in the lower-left corner during play (hover a card for details). " +
                 "Tap Back/Select or press Tab in a match to hide or show it.");
             AddPage("Toggle Cards", () => Cards.All.Select(c => ModSetting.Toggle(c.Name,
-                () => CardEnabled(c.Id), v => CardEntry(c.Id).Value = v, c.Description)).ToList<ModSetting>(),
+                () => CardEnabled(c.Id), v => CardEntry(c.Id).Value = v, CardText.Plain(c.Description))).ToList<ModSetting>(),
                 "Choose which cards can be offered. Online, the host's choice applies.");
         }
 

@@ -216,7 +216,7 @@ namespace CP99Online.Rounds
             return Mathf.Max(c.bounds.extents.x, c.bounds.extents.y);
         }
 
-        /// <summary>Better Spawn: after a face-off reset, move each player part of the way toward the puck.</summary>
+        /// <summary>Head Start: after a face-off reset, move each player part of the way toward the puck.</summary>
         internal static void AfterFaceOff()
         {
             var gm = Globals.gameManager;
@@ -229,7 +229,7 @@ namespace CP99Online.Rounds
                 if (b == null || f <= 0f) continue;
                 var p = b.transform.position;
                 var to = Vector3.Lerp(p, new Vector3(target.x, target.y, p.z), f);
-                Net.NetLog.Debug("Better Spawn: moved " + Vector2.Distance(p, to).ToString("F2") + " toward the puck (" + Vector2.Distance(p, target).ToString("F2") + " away)");
+                Net.NetLog.Debug("Head Start: moved " + Vector2.Distance(p, to).ToString("F2") + " toward the puck (" + Vector2.Distance(p, target).ToString("F2") + " away)");
                 b.transform.position = to;
                 var rb = b.GetComponent<Rigidbody2D>();
                 if (rb != null) rb.position = to;
@@ -245,6 +245,60 @@ namespace CP99Online.Rounds
             var a = last != null ? AppliedOf(last.GetComponent<BallData>()) : null;
             return a != null ? GamePuckCap * Mathf.Max(1f, a.Stats.ShotPower) : GamePuckCap;
         }
+
+        /// <summary>
+        /// A player's stats after cards, as changes from normal, for the stats tooltip. Works on every PC (it only
+        /// needs everyone's card list), and includes what the other team's cards do to this player (Slow Poke).
+        /// </summary>
+        internal static List<string> StatLines(int seatIndex)
+        {
+            var lines = new List<string>();
+            var seats = CardGame.Seats;
+            if (seatIndex < 0 || seatIndex >= seats.Count) return lines;
+            var stats = seats.Select(StatsOf).ToList();
+            var me = seats[seatIndex];
+            var st = stats[seatIndex];
+
+            // Team-wide effects, counted the same way as RecomputeAll (once per team in Team Vote).
+            var enemySlow = 1f;
+            var pylons = 0;
+            foreach (var t in seats.Select(s => s.Team).Distinct())
+            {
+                var members = Enumerable.Range(0, seats.Count).Where(i => seats[i].Team == t).Select(i => stats[i]).ToList();
+                var slow = CardGame.TeamMode ? members.Min(m => m.OpponentSpeed) : members.Aggregate(1f, (a, m) => a * m.OpponentSpeed);
+                if (t != me.Team) enemySlow *= slow;
+                else pylons = CardGame.TeamMode ? members.Max(m => m.Pylons) : members.Sum(m => m.Pylons);
+            }
+
+            // Same terms and colours as the card texts (UltraPuck.CardText): green helps you, red hurts, gold neutral.
+            var speed = Mathf.Clamp(st.MoveSpeed, 0.2f, 4f) * Mathf.Clamp(enemySlow, 0.2f, 1f);
+            if (!Same(speed, 1f))
+                lines.Add(CardText.Stat(speed, "Move Speed", true) +
+                    (enemySlow < 0.999f ? "  (includes " + CardText.Stat(enemySlow, "from opponents' Slow Poke", true) + ")" : string.Empty));
+            var weight = Mathf.Clamp(st.Weight, 0.1f, 10f);
+            if (!Same(weight, 1f))
+            {
+                lines.Add(CardText.Stat(1f / weight, "Knockback Taken", false));
+                lines.Add(CardText.Stat(weight, "Knockback Given", true));
+            }
+            if (!Same(st.Size, 1f)) lines.Add(CardText.Stat(Mathf.Clamp(st.Size, 0.3f, 3f), "Size", true, true));
+            if (!Same(st.ShotPower, 1f)) lines.Add(CardText.Stat(Mathf.Clamp(st.ShotPower, 0.2f, 5f), "Shot Power", true));
+            if (!Same(st.ChargeSpeed, 1f)) lines.Add(CardText.Stat(Mathf.Clamp(st.ChargeSpeed, 0.2f, 5f), "Charge-up Speed", true));
+            if (st.ExtraDashes > 0) lines.Add(CardText.Good("+" + Mathf.Clamp(st.ExtraDashes, 0, 9) + " Dash Charge" + (st.ExtraDashes > 1 ? "s" : string.Empty)) +
+                "  (" + (1 + Mathf.Clamp(st.ExtraDashes, 0, 9)) + " total)");
+            if (!Same(st.DashCooldown, 1f))
+                lines.Add(CardText.Stat(Mathf.Clamp(st.DashCooldown, 0.1f, 5f), "Dash Recharge", false) +
+                    "  (" + (GameDashCooldown * Mathf.Clamp(st.DashCooldown, 0.1f, 5f)).ToString("0.0") + " s per charge, normally 2.0 s)");
+            if (!Same(st.PickupRange, 1f)) lines.Add(CardText.Stat(st.PickupRange, "Pick-up Range", true));
+            if (st.SpawnCloser > 0f) lines.Add(CardText.Stat(1f - Mathf.Clamp(st.SpawnCloser, 0f, 0.6f), "Face-off Distance", false));
+            if (st.OpponentSpeed < 0.999f) lines.Add(CardText.Stat(st.OpponentSpeed, "Opponent Move Speed", false));
+            if (pylons > 0) lines.Add(CardText.Good("+" + Mathf.Min(pylons, 4) + " Pylon Goalie" + (pylons > 1 ? "s" : string.Empty)) + "  (your team's net)");
+            if (st.PuckGun) lines.Add("Puck Gun: every dash fires a " + CardText.Good("1 s Stun") + " shot");
+            if (lines.Count == 0) lines.Add("No changes from cards.");
+            return lines;
+        }
+
+        private static bool Same(float a, float b) { return Mathf.Abs(a - b) < 0.005f; }
 
         internal static string Describe(BallData b)
         {
@@ -287,10 +341,55 @@ namespace CP99Online.Rounds
     }
 
     /// <summary>
+    /// Knockback Given: a dash check pushes the opponent with (attacker velocity x 18) in BallShove's collision
+    /// handlers. Multiply that 18 by the attacker's Weight, so heavy players' checks push further.
+    /// </summary>
+    [HarmonyPatch]
+    internal static class CheckForcePatch
+    {
+        private const float GameCheckForce = 18f;
+
+        private static IEnumerable<MethodBase> TargetMethods()
+        {
+            yield return AccessTools.Method(typeof(BallShove), "OnCollisionEnter2D");
+            yield return AccessTools.Method(typeof(BallShove), "OnCollisionStay2D");
+        }
+
+        internal static float CheckForce(BallShove shove)
+        {
+            if (!CardGame.IsAuthority) return GameCheckForce;
+            var a = CardEffects.AppliedOf(shove.GetComponent<BallData>());
+            if (a == null || Mathf.Approximately(a.Stats.Weight, 1f)) return GameCheckForce;
+            var w = Mathf.Clamp(a.Stats.Weight, 0.1f, 10f);
+            Net.NetLog.Debug("Knockback Given: check force x" + w.ToString("F2"));
+            return GameCheckForce * w;
+        }
+
+        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> code)
+        {
+            var force = AccessTools.Method(typeof(CheckForcePatch), nameof(CheckForce));
+            var n = 0;
+            foreach (var ins in code)
+            {
+                if (ins.opcode == OpCodes.Ldc_R4 && ins.operand is float && Mathf.Approximately((float)ins.operand, GameCheckForce))
+                {
+                    n++;
+                    yield return new CodeInstruction(OpCodes.Ldarg_0) { labels = ins.labels, blocks = ins.blocks };
+                    yield return new CodeInstruction(OpCodes.Call, force);
+                }
+                else yield return ins;
+            }
+            if (n != 1) Plugin.Logger_.LogWarning("Knockback Given: expected one check force in a BallShove collision handler, found " + n);
+            else Plugin.Logger_.LogInfo("Knockback Given: check force hooked");
+        }
+    }
+
+    /// <summary>
     /// Everything that happens on a dash:
     /// - Dash charges: the game allows one shove every 2 s (BallShove.shoveTimer). With dash cards, allow a shove
     ///   whenever there's a charge and use one up. The game's timer still runs, so a shove's hit window is unchanged.
-    /// - Weight: the dash push is a force, so scale it by weight to keep the same dash for heavy/light players.
+    /// - Weight: the dash push is a force, so scale it by weight to keep the same dash speed for heavy/light players
+    ///   (how hard the dash hits others is CheckForcePatch).
     /// - Puck Gun: fire a shot.
     /// </summary>
     [HarmonyPatch(typeof(BallShove), nameof(BallShove.Shove))]
@@ -336,7 +435,7 @@ namespace CP99Online.Rounds
                 var rb = b.GetComponent<Rigidbody2D>();
                 if (rb != null) rb.AddForce(b.transform.up * CardEffects.GameDashForce * (weight - 1f));
             }
-            if (a.Stats.PuckGun) CardObjects.TryFirePuckGun(b);
+            if (a.Stats.PuckGun) CardObjects.FirePuckGun(b);
         }
     }
 }

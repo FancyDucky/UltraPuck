@@ -75,6 +75,9 @@ namespace CP99Online
             DashBurst();
             PylonPush();
             var cg = Rounds.CardGame.PhaseActive && !Rounds.CardGame.Revealing;
+            if (!cg && _inPhase)
+                for (var i = 0; i < Rounds.CardGame.Seats.Count; i++)
+                    NetLog.Info("TEST stats " + Rounds.CardGame.Seats[i].Name + ": " + string.Join(" | ", Rounds.CardEffects.StatLines(i).ToArray()));
             if (cg && !_inPhase) { _inPhase = true; _phasesSeen++; _burstStep = 0; _burstAt = -1f; NetLog.Info("TEST rounds: card screen " + _phasesSeen + " shown"); }
             if (!cg) { _inPhase = false; return; }
             var wait = _role == "host" ? 5f : 7f;
@@ -136,7 +139,6 @@ namespace CP99Online
                         seat.Ball.transform.position = p;
                         seat.Ball.GetComponent<Rigidbody2D>().position = p;
                         d = target.Ball.transform.position - p;
-                        Rounds.CardObjects.ResetGunCooldown(seat.Ball);
                         var shove = seat.Ball.GetComponent<BallShove>();
                         if (shove.shoveTimer > 0f) shove.shoveTimer = 0f;
                     }

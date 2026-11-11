@@ -16,6 +16,8 @@ namespace CP99Online.Rounds
         private readonly Dictionary<int, int> _cursor = new Dictionary<int, int>();
         private readonly Dictionary<int, float> _lastX = new Dictionary<int, float>();
         private bool _cursorForced, _cursorBefore;
+        private static readonly string TestHover = System.Environment.GetEnvironmentVariable("CP99_TEST_HOVER"); // tests: act as if this name is hovered
+        private Rect _panelRect; // where the corner list was last drawn (GUI coordinates), empty when hidden
         private Texture2D _white;
         private GUIStyle _title, _sub, _cardName, _cardText, _small, _chip, _tipName, _tipText;
         private string _tipTitle, _tipBody;
@@ -32,7 +34,9 @@ namespace CP99Online.Rounds
             }
 
             var picking = CardGame.PhaseActive && !CardGame.Revealing;
-            if (CardGame.PhaseActive)
+            var m = Input.mousePosition;
+            var overPanel = _panelRect.width > 0f && _panelRect.Contains(new Vector2(m.x, Screen.height - m.y));
+            if (CardGame.PhaseActive || overPanel)
             {
                 if (!_cursorForced) { _cursorForced = true; _cursorBefore = UnityEngine.Cursor.visible; }
                 UnityEngine.Cursor.visible = true;
@@ -165,6 +169,7 @@ namespace CP99Online.Rounds
 
         private void OnGUI()
         {
+            if (Event.current.type == EventType.Layout) _panelRect = new Rect();
             if (!InArena || CardGame.Seats.Count == 0) return;
             Styles();
             _tipTitle = null;
@@ -278,18 +283,27 @@ namespace CP99Online.Rounds
                     rowW += _chip.CalcSize(new GUIContent(CardName(g.Key) + (g.Count() > 1 ? " x" + g.Count() : string.Empty))).x + 15 * u;
                 widest = Mathf.Max(widest, rowW);
             }
-            var w = Mathf.Min(Mathf.Max(Screen.width * 0.5f, 200 * u), 140 * u + widest);
+            var w = Mathf.Min(Mathf.Max(Screen.width * 0.5f, 330 * u), Mathf.Max(330 * u, 140 * u + widest));
             var box = new Rect(10 * u, Screen.height - h - 10 * u, w, h);
             Fill(box, new Color(0f, 0f, 0f, CardGame.PhaseActive ? 0.75f : 0.45f));
-            Label(new Rect(box.x + 8 * u, box.y + 4 * u, w, 22 * u), CardGame.PhaseActive ? "CARDS" : "CARDS   (Back / Tab: hide)", _small);
+            Label(new Rect(box.x + 8 * u, box.y + 4 * u, w, 22 * u), CardGame.PhaseActive ? "CARDS   (hover a name for stats)" : "CARDS   (hover a name for stats, Back / Tab: hide)", _small);
             var mouse = Event.current.mousePosition;
+            _panelRect = box;
             var y = box.y + 28 * u;
-            foreach (var s in seats)
+            for (var seatIndex = 0; seatIndex < seats.Count; seatIndex++)
             {
+                var s = seats[seatIndex];
                 var name = new GUIStyle(_small);
                 name.normal.textColor = TeamColor(s.Team);
                 var label = s.Name + (CardGame.PhaseActive && !CardGame.Revealing && s.Human && s.Offer.Length > 0 ? (s.Choice >= 0 ? " *" : " ...") : string.Empty);
-                Label(new Rect(box.x + 8 * u, y, 120 * u, lineH), label, name);
+                var nameRect = new Rect(box.x + 8 * u, y, 120 * u, lineH);
+                if (nameRect.Contains(mouse) || (TestHover != null && s.Name == TestHover && _tipTitle == null))
+                {
+                    Fill(new Rect(nameRect.x - 4 * u, nameRect.y, nameRect.width, nameRect.height), new Color(1f, 1f, 1f, 0.12f));
+                    _tipTitle = s.Name + "'s stats";
+                    _tipBody = string.Join("\n", CardEffects.StatLines(seatIndex).ToArray());
+                }
+                Label(nameRect, label, name);
                 var x = box.x + 132 * u;
                 foreach (var g in s.Cards.GroupBy(id => id))
                 {
@@ -315,7 +329,7 @@ namespace CP99Online.Rounds
 
         private void DrawTooltip(float u)
         {
-            var w = 260 * u;
+            var w = 320 * u;
             var body = _tipText.CalcHeight(new GUIContent(_tipBody), w - 16 * u);
             var h = 34 * u + body + 8 * u;
             var m = Event.current.mousePosition;
@@ -329,21 +343,24 @@ namespace CP99Online.Rounds
         /// <summary>Draws one card; returns true if it was clicked.</summary>
         private bool DrawCard(Rect r, string id, bool selected, bool chosen, bool dim, string footer, float u)
         {
+            // The selected card's frame grows a little, but its text is laid out from the normal size (in), so the
+            // words don't re-wrap when the selection moves.
+            var inner = r;
             if (selected) r = new Rect(r.x - r.width * 0.03f, r.y - r.height * 0.03f, r.width * 1.06f, r.height * 1.06f);
             var c = CardColor(id);
             var a = dim ? 0.45f : 1f;
             Fill(r, new Color(0.11f, 0.12f, 0.15f, 0.97f * (dim ? 0.8f : 1f)));
-            var head = new Rect(r.x, r.y, r.width, r.height * 0.26f);
+            var head = new Rect(r.x, r.y, r.width, inner.yMax - inner.height * 0.74f - r.y);
             Fill(head, new Color(c.r, c.g, c.b, a));
-            var nameStyle = new GUIStyle(_cardName) { fontSize = Mathf.RoundToInt(r.height * 0.075f) };
-            Label(new Rect(head.x + 6 * u, head.y, head.width - 12 * u, head.height), CardName(id), nameStyle);
-            var textStyle = new GUIStyle(_cardText) { fontSize = Mathf.Max(10, Mathf.RoundToInt(r.height * 0.052f)) };
+            var nameStyle = new GUIStyle(_cardName) { fontSize = Mathf.RoundToInt(inner.height * 0.075f) };
+            Label(new Rect(inner.x + 6 * u, head.y, inner.width - 12 * u, head.height), CardName(id), nameStyle);
+            var textStyle = new GUIStyle(_cardText) { fontSize = Mathf.Max(10, Mathf.RoundToInt(inner.height * 0.052f)) };
             textStyle.normal.textColor = new Color(0.9f, 0.92f, 0.95f, a);
-            Label(new Rect(r.x + 10 * u, head.yMax + 10 * u, r.width - 20 * u, r.height * 0.55f), CardText(id), textStyle);
+            Label(new Rect(inner.x + 10 * u, head.yMax + 10 * u, inner.width - 20 * u, inner.height * 0.55f), CardText(id), textStyle);
             if (!string.IsNullOrEmpty(footer))
             {
-                var f = new GUIStyle(_small) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.Max(10, Mathf.RoundToInt(r.height * 0.05f)) };
-                Label(new Rect(r.x, r.yMax - r.height * 0.12f, r.width, r.height * 0.1f), footer, f);
+                var f = new GUIStyle(_small) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.Max(10, Mathf.RoundToInt(inner.height * 0.05f)) };
+                Label(new Rect(inner.x, inner.yMax - inner.height * 0.12f, inner.width, inner.height * 0.1f), footer, f);
             }
             if (chosen) Outline(r, new Color(1f, 0.85f, 0.25f), 4 * u);
             else if (selected) Outline(r, Color.white, 3 * u);
@@ -405,11 +422,11 @@ namespace CP99Online.Rounds
                 _title = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold };
                 _sub = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter };
                 _cardName = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold, wordWrap = true };
-                _cardText = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.UpperCenter, wordWrap = true };
+                _cardText = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.UpperCenter, wordWrap = true, richText = true };
                 _small = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleLeft, fontStyle = FontStyle.Bold };
                 _chip = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, padding = new RectOffset(0, 0, 0, 0) };
                 _tipName = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold };
-                _tipText = new GUIStyle(GUI.skin.label) { wordWrap = true };
+                _tipText = new GUIStyle(GUI.skin.label) { wordWrap = true, richText = true };
                 foreach (var s in new[] { _title, _sub, _cardName, _cardText, _small, _chip, _tipName, _tipText }) s.normal.textColor = Color.white;
                 _tipText.normal.textColor = new Color(0.85f, 0.87f, 0.9f);
             }
