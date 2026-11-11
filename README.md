@@ -17,7 +17,9 @@ A mod for [ClusterPuck 99](https://store.steampowered.com/app/337960/) that adds
   and [examples/ExampleMod](examples/ExampleMod).
 - **Play Online** and **Mods** entries in the game's own main menu (keyboard and controller).
 - **Overlay menu** for extras like direct IP — F8, or hold View/Back on a controller.
-- **Auto-update** from this repo's GitHub Releases (on by default; Main menu > Mods > Auto Update).
+- **Auto-update** from this repo's GitHub Releases (on by default; Main menu > Mods > Auto Update). A popup says when
+  an update is found; once it's installed the game restarts itself through Steam after a 5 s countdown (on the main
+  menu, never mid-match or online; Esc / B to restart later). On Linux / Steam Deck it asks you to restart instead.
 - Windows, Linux and Steam Deck (via Proton), and Mac (native, new).
 
 ## Install
