@@ -253,6 +253,7 @@ namespace CP99Online.Net
         {
             LobbyHostUpdate();
             HostCardsUpdate();
+            HostPylonsUpdate();
             List<int> dead = null;
             foreach (var c in _conns.Values)
                 if (Now - c.LastHeard > Proto.Timeout) (dead ?? (dead = new List<int>())).Add(c.PeerId);

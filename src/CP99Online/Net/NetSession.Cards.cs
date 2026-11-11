@@ -107,13 +107,14 @@ namespace CP99Online.Net
         }
 
         /// <summary>Host: a Puck Gun shot was fired (clients draw it; the host decides what it hits).</summary>
-        internal void HostSendShot(ushort id, int team, UnityEngine.Vector2 pos, UnityEngine.Vector2 vel)
+        internal void HostSendShot(ushort id, int team, int slot, UnityEngine.Vector2 pos, UnityEngine.Vector2 vel)
         {
             if (_clients.Count == 0) return;
             Begin(Msg.CardShot);
             _msg.U8(0);
             _msg.U16(id);
             _msg.U8(team);
+            _msg.U8(slot < 0 ? 255 : slot);
             _msg.F32(pos.x); _msg.F32(pos.y);
             _msg.F32(vel.x); _msg.F32(vel.y);
             BroadcastReliable();
@@ -134,9 +135,36 @@ namespace CP99Online.Net
             var id = r.U16();
             if (kind == 1) { CardObjects.EndShot(id); return; }
             int team = r.U8();
+            int slot = r.U8();
             var pos = new UnityEngine.Vector2(r.F32(), r.F32());
             var vel = new UnityEngine.Vector2(r.F32(), r.F32());
-            if (Match.Active) CardObjects.ClientShot(id, team, pos, vel);
+            if (Match.Active) CardObjects.ClientShot(id, team, slot == 255 ? -1 : slot, pos, vel);
+        }
+
+        // Pylon Goalie positions, ~20 times a second while any pylon exists (they can be bumped on the host).
+        private float _pylonsSentAt;
+
+        private void HostPylonsUpdate()
+        {
+            if (!HostInMatch || _clients.Count == 0 || CardObjects.Pylons.Count == 0 || Now - _pylonsSentAt < 0.05f) return;
+            _pylonsSentAt = Now;
+            Begin(Msg.Pylons);
+            var list = CardObjects.Pylons;
+            _msg.U8(list.Count);
+            foreach (var p in list)
+            {
+                var pos = p.Root != null ? p.Root.transform.position : p.Home;
+                _msg.F32(pos.x); _msg.F32(pos.y);
+            }
+            foreach (var ci in _clients.Values) ci.Conn.SendUnreliable(_msg);
+        }
+
+        private void ClientHandlePylons(Reader r)
+        {
+            int n = r.U8();
+            var list = new List<UnityEngine.Vector2>();
+            for (var i = 0; i < n; i++) list.Add(new UnityEngine.Vector2(r.F32(), r.F32()));
+            CardObjects.ClientPylonPositions(list);
         }
 
         private void HostHandleCardPick(ClientInfo ci, Reader r)

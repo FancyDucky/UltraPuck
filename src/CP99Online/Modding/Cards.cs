@@ -29,11 +29,11 @@ namespace UltraPuck
         public float OpponentSpeed = 1f;
         /// <summary>How far toward the puck you start each face-off (0.15 = 15% closer).</summary>
         public float SpawnCloser;
-        /// <summary>Puck pick-up distance multiplier (2 = grab it from twice as far).</summary>
+        /// <summary>Puck pick-up distance multiplier (1.2 = grab it from 20% further).</summary>
         public float PickupRange = 1f;
         /// <summary>Pylons (a solid dummy player) placed in front of your team's net.</summary>
         public int Pylons;
-        /// <summary>Dashing fires a shot that knocks out the first opponent it hits (60 s cooldown).</summary>
+        /// <summary>Dashing fires a shot that knocks out the first opponent it hits (10 s cooldown).</summary>
         public bool PuckGun;
     }
 
@@ -141,10 +141,10 @@ namespace UltraPuck
     {
         public override string Id { get { return "ultrapuck.heavyweight"; } }
         public override string Name { get { return "Heavyweight"; } }
-        public override string Description { get { return "50% bigger and 200% heavier (very hard to knock around), but 10% slower."; } }
+        public override string Description { get { return "8% bigger and 200% heavier (very hard to knock around), but 10% slower."; } }
         public override Color Color { get { return new Color(0.62f, 0.45f, 0.30f); } }
         public override int MaxPerPlayer { get { return 2; } }
-        public override void Apply(CardStats s) { s.Weight *= 3f; s.Size *= 1.5f; s.MoveSpeed *= 0.9f; }
+        public override void Apply(CardStats s) { s.Weight *= 3f; s.Size *= 1.08f; s.MoveSpeed *= 0.9f; }
     }
 
     internal sealed class FeatherweightCard : UltraCard
@@ -191,7 +191,7 @@ namespace UltraPuck
     {
         public override string Id { get { return "ultrapuck.pylongoalie"; } }
         public override string Name { get { return "Pylon Goalie"; } }
-        public override string Description { get { return "A dummy player stands in front of your net. It blocks shots but can't pick up the puck."; } }
+        public override string Description { get { return "A dummy player stands in front of your net. It blocks shots and can be bumped, but can't pick up the puck."; } }
         public override Color Color { get { return new Color(0.70f, 0.72f, 0.76f); } }
         public override int MaxPerPlayer { get { return 2; } }
         public override void Apply(CardStats s) { s.Pylons++; }
@@ -201,17 +201,17 @@ namespace UltraPuck
     {
         public override string Id { get { return "ultrapuck.puckmagnet"; } }
         public override string Name { get { return "Puck Magnet"; } }
-        public override string Description { get { return "Grab the puck from twice as far away."; } }
+        public override string Description { get { return "Grab the puck from 20% further away."; } }
         public override Color Color { get { return new Color(0.90f, 0.35f, 0.65f); } }
         public override int MaxPerPlayer { get { return 2; } }
-        public override void Apply(CardStats s) { s.PickupRange *= 2f; }
+        public override void Apply(CardStats s) { s.PickupRange *= 1.2f; }
     }
 
     internal sealed class PuckGunCard : UltraCard
     {
         public override string Id { get { return "ultrapuck.puckgun"; } }
         public override string Name { get { return "Puck Gun"; } }
-        public override string Description { get { return "Dashing fires a shot that knocks out the first opponent it hits. 1 minute cooldown."; } }
+        public override string Description { get { return "Dashing fires a shot that knocks out the first opponent it hits. 10 second cooldown (bar under you)."; } }
         public override Color Color { get { return new Color(0.80f, 0.20f, 0.25f); } }
         public override int MaxPerPlayer { get { return 1; } }
         public override void Apply(CardStats s) { s.PuckGun = true; }

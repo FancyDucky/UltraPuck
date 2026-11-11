@@ -88,6 +88,7 @@ namespace CP99Online.Rounds
         {
             if (!IsAuthority) return;
             CardEffects.AfterFaceOff();
+            CardObjects.ResetPylons();
             foreach (var s in Seats) CardEffects.ApplyBallHooks(s);
         }
 

@@ -73,6 +73,7 @@ namespace CP99Online
             if (_role == "host" && Match.Active && !_goalsSet) { _goalsSet = true; int g; NumGoalsToWinManager.numGoalsToWin = int.TryParse(Environment.GetEnvironmentVariable("CP99_ROUNDS_GOALS"), out g) ? g : 3; NetLog.Info("TEST rounds: goals to win = " + NumGoalsToWinManager.numGoalsToWin); }
             if (!Match.Active) { _goalsSet = false; }
             DashBurst();
+            PylonPush();
             var cg = Rounds.CardGame.PhaseActive && !Rounds.CardGame.Revealing;
             if (cg && !_inPhase) { _inPhase = true; _phasesSeen++; _burstStep = 0; _burstAt = -1f; NetLog.Info("TEST rounds: card screen " + _phasesSeen + " shown"); }
             if (!cg) { _inPhase = false; return; }
@@ -87,6 +88,21 @@ namespace CP99Online
                 if (_role == "host") Rounds.CardGame.Pick(i, pick, 0);
                 else { Rounds.CardGame.PickLocal(i, pick); NetSession.Instance.ClientSendCardPick(i, pick); }
             }
+        }
+
+        // Once a pylon exists and play is running: give it one shove (host) to check it moves and syncs.
+        private bool _pylonPushed;
+
+        private void PylonPush()
+        {
+            if (_role != "host" || _pylonPushed || Rounds.CardObjects.Pylons.Count == 0) return;
+            var gm = Globals.gameManager;
+            if (gm == null || Rounds.CardGame.PhaseActive || gm.startCountdown > 0f || gm.roundOver) return;
+            var p = Rounds.CardObjects.Pylons[0];
+            if (p.Body == null) return;
+            _pylonPushed = true;
+            p.Body.AddForce(new Vector2(1f, -1f).normalized * 400f);
+            NetLog.Info("TEST pylon pushed from " + Fmt(p.Root.transform.position));
         }
 
         // After the first card pick, once play resumes: the host's player dashes 3 times, 0.35 s apart.
@@ -297,6 +313,8 @@ namespace CP99Online
                 var b = Match.Balls[i];
                 sb.Append(" | s" + i + " " + b.playerData.account.name + " " + Fmt(b.transform.position) + (b.alive ? "" : " DEAD") + (b.canMove ? "" : " noMove") + (b.canCarry ? "" : " noCarry"));
             }
+            foreach (var py in Rounds.CardObjects.Pylons)
+                if (py.Root != null) sb.Append(" | pylon " + Fmt(py.Root.transform.position) + " scale=" + py.Root.GetComponentInChildren<Renderer>().transform.lossyScale.x.ToString("F2"));
             NetLog.Info(sb.ToString());
             if (_diagCount++ < 40)
             {

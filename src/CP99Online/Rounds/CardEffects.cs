@@ -147,6 +147,13 @@ namespace CP99Online.Rounds
             }
         }
 
+        /// <summary>A player's size without cards (pylons use it, so they don't grow with Heavyweight).</summary>
+        internal static Vector3 BaseScale(BallData b)
+        {
+            Original o;
+            return b != null && _orig.TryGetValue(b, out o) ? o.Scale : (b != null ? b.transform.localScale : Vector3.one);
+        }
+
         internal static Applied AppliedOf(BallData b)
         {
             Applied a;
@@ -184,7 +191,7 @@ namespace CP99Online.Rounds
             foreach (var kv in _applied)
             {
                 var b = kv.Key;
-                if (b == null || kv.Value.Stats.PickupRange <= 1.01f) continue;
+                if (b == null || kv.Value.Stats.PickupRange <= 1.001f) continue;
                 if (b.gameObject == _lastCarrier && now - _puckFreeSince < 0.6f) continue; // don't re-grab your own shot
                 if (!b.alive || b.fallen || !b.canCarry || b.carryObject != null) continue;
                 var h = b.GetComponent<BallHandling>();
@@ -246,7 +253,7 @@ namespace CP99Online.Rounds
             return "speedFactor=" + (a != null ? a.SpeedFactor.ToString("F2") : "1") + " strength=" + b.strength.ToString("F1") +
                 " mass=" + b.mass.ToString("F2") + " scale=" + b.transform.localScale.x.ToString("F2") +
                 (d != null ? " dashes=" + d.Max + " cooldown=" + d.Cooldown.ToString("F2") : string.Empty) +
-                (a != null && a.Stats.PickupRange > 1.01f ? " pickup=x" + a.Stats.PickupRange.ToString("F1") : string.Empty) +
+                (a != null && a.Stats.PickupRange > 1.001f ? " pickup=x" + a.Stats.PickupRange.ToString("F1") : string.Empty) +
                 (a != null && a.Stats.SpawnCloser > 0f ? " spawnCloser=" + a.Stats.SpawnCloser.ToString("F2") : string.Empty) +
                 (a != null && a.Stats.PuckGun ? " puckGun" : string.Empty);
         }

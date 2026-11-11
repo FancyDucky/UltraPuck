@@ -167,6 +167,9 @@ namespace CP99Online.Net
                 case Msg.CardShot:
                     ClientHandleShot(r);
                     break;
+                case Msg.Pylons:
+                    ClientHandlePylons(r);
+                    break;
                 case Msg.Nav:
                     _navMenu = r.Str();
                     _navElement = r.Str();

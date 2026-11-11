@@ -8,55 +8,86 @@ namespace CP99Online.Rounds
     /// <summary>Things cards put into the arena: Pylon Goalie dummies and Puck Gun shots.</summary>
     internal static class CardObjects
     {
-        // ------------------------------------------------------------------ Pylon Goalie
-
-        private static readonly List<GameObject> _pylons = new List<GameObject>();
-        private static string _pylonSig;
-
         internal static void Clear()
         {
-            foreach (var p in _pylons) if (p != null) Object.Destroy(p);
+            foreach (var p in _pylons) if (p != null && p.Root != null) Object.Destroy(p.Root);
             _pylons.Clear();
             _pylonSig = null;
             _gunReadyAt.Clear();
+            _clientGunReadyAt.Clear();
             foreach (var s in _shots.Values) if (s != null) Object.Destroy(s.gameObject);
             _shots.Clear();
         }
 
-        internal static bool IsPylon(Collider2D c) { return c != null && c.gameObject.name == PylonName; }
+        // ------------------------------------------------------------------ Pylon Goalie
+        // A dummy player in front of the net. On the host (or offline) it's a heavy physics body that players and
+        // the puck can bump; it goes back to its spot at every face-off. Online clients get its position from the host.
+
+        internal sealed class Pylon
+        {
+            public GameObject Root;
+            public Rigidbody2D Body;
+            public Vector3 Home;
+            public Vector2 Target; // clients: latest position from the host
+        }
+
         private const string PylonName = "UltraPuck_Pylon";
+        private const float PylonWeight = 3f;   // x a normal player's mass
+        private const float PylonDrag = 3.5f;   // slows down quickly after a bump
+
+        private static readonly List<Pylon> _pylons = new List<Pylon>();
+        private static string _pylonSig;
+
+        internal static IList<Pylon> Pylons { get { return _pylons; } }
+        internal static bool IsPylon(Collider2D c) { return c != null && c.gameObject.name == PylonName; }
 
         /// <summary>Make sure each team has the given number of pylons in front of its net (every PC builds its own).</summary>
         internal static void SetPylons(Dictionary<int, int> perTeam)
         {
             var sig = string.Join(",", perTeam.Where(kv => kv.Value > 0).OrderBy(kv => kv.Key).Select(kv => kv.Key + ":" + kv.Value).ToArray());
-            if (sig == _pylonSig && _pylons.All(p => p != null)) return;
+            if (sig == _pylonSig && _pylons.All(p => p.Root != null)) return;
             _pylonSig = sig;
-            foreach (var p in _pylons) if (p != null) Object.Destroy(p);
+            foreach (var p in _pylons) if (p.Root != null) Object.Destroy(p.Root);
             _pylons.Clear();
 
             var gm = Globals.gameManager;
             if (gm == null) return;
-            foreach (var kv in perTeam)
+            foreach (var kv in perTeam.OrderBy(kv => kv.Key)) // same order on every PC (positions are sent by index)
             {
                 if (kv.Value <= 0 || kv.Key < 0 || kv.Key >= gm.teams.Count) continue;
                 var team = gm.teams[kv.Key];
                 Vector3 spot, outward;
-                if (!GoalieSpot(gm, team, out spot, out outward)) continue;
+                if (!GoalieSpot(team, out spot, out outward)) continue;
                 var side = new Vector3(-outward.y, outward.x, 0f);
                 var n = Mathf.Min(kv.Value, 4);
                 for (var i = 0; i < n; i++)
                 {
-                    var offset = (i - (n - 1) / 2f) * 1.1f;
-                    var p = MakePylon(team, spot + side * offset);
+                    var p = MakePylon(team, spot + side * ((i - (n - 1) / 2f) * 1.1f));
                     if (p != null) _pylons.Add(p);
                 }
                 NetLog.Info("Rounds: " + n + " pylon(s) in front of team " + (kv.Key + 1) + "'s net at " + spot);
             }
         }
 
+        /// <summary>Host / offline, after a face-off reset: pylons go back to their spots.</summary>
+        internal static void ResetPylons()
+        {
+            foreach (var p in _pylons)
+            {
+                if (p.Root == null) continue;
+                p.Root.transform.position = p.Home;
+                if (p.Body != null) { p.Body.position = p.Home; p.Body.velocity = Vector2.zero; p.Body.angularVelocity = 0f; }
+            }
+        }
+
+        /// <summary>Client: pylon positions from the host.</summary>
+        internal static void ClientPylonPositions(IList<Vector2> positions)
+        {
+            for (var i = 0; i < _pylons.Count && i < positions.Count; i++) _pylons[i].Target = positions[i];
+        }
+
         /// <summary>The game's goalie position in front of a team's net, and the direction out of the net.</summary>
-        private static bool GoalieSpot(GameManager gm, TeamData team, out Vector3 spot, out Vector3 outward)
+        private static bool GoalieSpot(TeamData team, out Vector3 spot, out Vector3 outward)
         {
             spot = outward = Vector3.zero;
             var node = team.goalieNodes;
@@ -74,28 +105,40 @@ namespace CP99Online.Rounds
             }
             var goalPos = goal != null ? goal.transform.position : spot;
             var other = team.otherGoalNode != null ? team.otherGoalNode.transform.position : Vector3.zero;
-            outward = (other - goalPos);
+            outward = other - goalPos;
             outward.z = 0f;
             outward = outward.sqrMagnitude > 0.01f ? outward.normalized : Vector3.up;
             if (node == null) spot = goalPos + outward * 2f;
             return true;
         }
 
-        private static GameObject MakePylon(TeamData team, Vector3 at)
+        private static Pylon MakePylon(TeamData team, Vector3 at)
         {
             var template = team.members.FirstOrDefault(m => m != null && m.ballMesh != null);
             if (template == null) return null;
             var root = new GameObject(PylonName);
             root.layer = template.gameObject.layer;
-            root.transform.position = new Vector3(at.x, at.y, template.transform.position.z);
+            var home = new Vector3(at.x, at.y, template.transform.position.z);
+            root.transform.position = home;
 
-            // Same size and collision as a normal (card-free) player.
+            // A normal (card-free) player's size, even if the team has Heavyweight.
+            var baseScale = CardEffects.BaseScale(template);
             var col = root.AddComponent<CircleCollider2D>();
             var tc = template.GetComponent<CircleCollider2D>();
-            var baseScale = template.transform.localScale;
             col.radius = tc != null ? tc.radius * Mathf.Max(baseScale.x, baseScale.y) : 0.4f;
+
             var rb = root.AddComponent<Rigidbody2D>();
-            rb.isKinematic = true; // stays put; players and the puck bounce off it
+            var trb = template.GetComponent<Rigidbody2D>();
+            if (CardGame.IsAuthority)
+            {
+                // Heavy, slides a little when bumped, then stops.
+                rb.gravityScale = trb != null ? trb.gravityScale : 0f;
+                rb.mass = (trb != null ? trb.mass : 0.5f) * PylonWeight;
+                rb.drag = PylonDrag;
+                rb.angularDrag = 5f;
+                rb.fixedAngle = true;
+            }
+            else rb.isKinematic = true; // clients just follow the host's position
 
             var mesh = (GameObject)Object.Instantiate(template.ballMesh);
             mesh.SetActive(true);
@@ -111,23 +154,43 @@ namespace CP99Online.Rounds
             foreach (var r in mesh.GetComponentsInChildren<Renderer>(true))
                 foreach (var m in r.materials)
                     if (m.HasProperty("_Color")) m.color = Color.Lerp(m.color, Color.gray, 0.45f);
-            return root;
+
+            var pylon = new Pylon { Root = root, Body = rb, Home = home, Target = home };
+            if (!CardGame.IsAuthority) root.AddComponent<PylonFollow>().Pylon = pylon;
+            return pylon;
+        }
+
+        /// <summary>Client: glide the pylon to the host's latest position.</summary>
+        internal sealed class PylonFollow : MonoBehaviour
+        {
+            public Pylon Pylon;
+
+            private void Update()
+            {
+                var p = transform.position;
+                var t = Vector2.Lerp(p, Pylon.Target, Mathf.Clamp01(Time.deltaTime * 15f));
+                transform.position = new Vector3(t.x, t.y, p.z);
+            }
         }
 
         // ------------------------------------------------------------------ Puck Gun
 
-        internal const float GunCooldown = 60f;
+        internal const float GunCooldown = 10f;
         private const float ShotSpeed = 26f, ShotRadius = 0.25f, ShotLife = 4f;
 
         private static readonly Dictionary<BallData, float> _gunReadyAt = new Dictionary<BallData, float>();
+        private static readonly Dictionary<int, float> _clientGunReadyAt = new Dictionary<int, float>(); // by slot
         private static readonly Dictionary<ushort, PuckGunShot> _shots = new Dictionary<ushort, PuckGunShot>();
         private static ushort _nextShot = 1;
 
-        /// <summary>Seconds until this player's Puck Gun is ready (0 = ready).</summary>
+        /// <summary>Seconds until this player's Puck Gun is ready (0 = ready). Works on every PC.</summary>
         internal static float GunCooldownLeft(BallData b)
         {
+            if (b == null) return 0f;
             float t;
-            return b != null && _gunReadyAt.TryGetValue(b, out t) ? Mathf.Max(0f, t - Time.time) : 0f;
+            if (NetSession.ClientInMatch)
+                return _clientGunReadyAt.TryGetValue(Match.Slot(b), out t) ? Mathf.Max(0f, t - Time.time) : 0f;
+            return _gunReadyAt.TryGetValue(b, out t) ? Mathf.Max(0f, t - Time.time) : 0f;
         }
 
         /// <summary>Tests: make this player's Puck Gun ready now.</summary>
@@ -143,12 +206,16 @@ namespace CP99Online.Rounds
             var id = _nextShot++;
             var team = Globals.gameManager.teams.IndexOf(b.team);
             Spawn(id, team, pos, dir * ShotSpeed, b, true);
-            if (NetSession.HostInMatch) NetSession.Instance.HostSendShot(id, team, pos, dir * ShotSpeed);
+            if (NetSession.HostInMatch) NetSession.Instance.HostSendShot(id, team, Match.Slot(b), pos, dir * ShotSpeed);
             NetLog.Info("Rounds: Puck Gun fired by " + (b.playerData != null && b.playerData.account != null ? b.playerData.account.name : "?"));
         }
 
         /// <summary>Client: the host fired a shot (visual only; the host decides what it hits).</summary>
-        internal static void ClientShot(ushort id, int team, Vector2 pos, Vector2 vel) { Spawn(id, team, pos, vel, null, false); }
+        internal static void ClientShot(ushort id, int team, int slot, Vector2 pos, Vector2 vel)
+        {
+            if (slot >= 0) _clientGunReadyAt[slot] = Time.time + GunCooldown;
+            Spawn(id, team, pos, vel, null, false);
+        }
 
         internal static void EndShot(ushort id)
         {
@@ -169,8 +236,7 @@ namespace CP99Online.Rounds
             Object.DestroyImmediate(go.GetComponent<Collider>());
             go.transform.position = new Vector3(pos.x, pos.y, z - 0.3f);
             go.transform.localScale = Vector3.one * ShotRadius * 2f;
-            var r = go.GetComponent<Renderer>();
-            r.material.color = Color.Lerp(color, Color.white, 0.2f);
+            go.GetComponent<Renderer>().material.color = Color.Lerp(color, Color.white, 0.2f);
             var trail = go.AddComponent<TrailRenderer>();
             var shader = Shader.Find("Sprites/Default") ?? Shader.Find("Particles/Alpha Blended");
             if (shader != null) trail.material = new Material(shader);
@@ -196,7 +262,6 @@ namespace CP99Online.Rounds
 
             private void Start()
             {
-                _wallMask = 0;
                 foreach (var layer in new[] { "Wall", "Forcefield", "Spike" })
                 {
                     var l = LayerMask.NameToLayer(layer);
@@ -221,8 +286,7 @@ namespace CP99Online.Rounds
                 _age += dt;
                 var pos = (Vector2)transform.position;
                 var step = Velocity * dt;
-                var hits = Physics2D.CircleCastAll(pos, ShotRadius, Velocity.normalized, step.magnitude);
-                foreach (var hit in hits.OrderBy(h => h.distance))
+                foreach (var hit in Physics2D.CircleCastAll(pos, ShotRadius, Velocity.normalized, step.magnitude).OrderBy(h => h.distance))
                 {
                     var c = hit.collider;
                     if (c == null || c.isTrigger) continue;
@@ -236,23 +300,21 @@ namespace CP99Online.Rounds
                     {
                         if (ball == Owner || !ball.alive || gm.teams.IndexOf(ball.team) == Team) continue; // passes teammates
                         KnockOut(ball, gm);
-                        End(hit.point);
+                        End();
                         return;
                     }
-                    if (c.GetComponent<Puck>() != null) continue; // passes the puck
-                    if (CardObjects.IsPylon(c) || (_wallMask & (1 << c.gameObject.layer)) != 0) // walls; floor and helper colliders are ignored
+                    if (IsPylon(c) || (_wallMask & (1 << c.gameObject.layer)) != 0) // walls; the floor and the puck are ignored
                     {
-                        NetLog.Debug("Puck Gun shot " + Id + " stopped by " + c.name + " (layer " + LayerMask.LayerToName(c.gameObject.layer) +
-                            ") after " + _age.ToString("F2") + "s");
-                        End(hit.point);
+                        NetLog.Debug("Puck Gun shot " + Id + " stopped by " + c.name + " (layer " + LayerMask.LayerToName(c.gameObject.layer) + ")");
+                        End();
                         return;
                     }
                 }
                 transform.position += (Vector3)step;
-                if (_age > ShotLife) End(transform.position);
+                if (_age > ShotLife) End();
             }
 
-            private void KnockOut(BallData ball, GameManager gm)
+            private static void KnockOut(BallData ball, GameManager gm)
             {
                 var dr = ball.GetComponent<BallDeathRespawn>();
                 if (dr == null) return;
@@ -263,7 +325,7 @@ namespace CP99Online.Rounds
                 NetLog.Info("Rounds: Puck Gun knocked out " + (ball.playerData != null && ball.playerData.account != null ? ball.playerData.account.name : "?"));
             }
 
-            private void End(Vector2 at)
+            private void End()
             {
                 _shots.Remove(Id);
                 if (NetSession.HostInMatch) NetSession.Instance.HostSendShotEnd(Id);

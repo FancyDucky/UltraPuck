@@ -113,156 +113,33 @@ namespace UltraPuck
         }
     }
 
-    /// <summary>
-    /// Draws a small bar just above each player (LineRenderers that follow the ball): one segment per dash
-    /// charge, dark when empty, filling with white as it recharges, with a short pulse when it's ready.
-    /// </summary>
+    /// <summary>A small bar just above each player: one segment per dash charge (see PlayerBar).</summary>
     internal sealed class DashMeterView : MonoBehaviour
     {
-        private const float BarLength = 0.78f;  // world units, whole bar
-        private const float Thickness = 0.09f;
-        private const float SegGap = 0.07f;     // between segments
-        private const float Above = 0.5f;       // bar height above the ball's centre
+        private readonly PlayerBars _bars = new PlayerBars("DashBar");
 
-        private sealed class Ring
-        {
-            public GameObject Root;
-            public readonly List<LineRenderer> Back = new List<LineRenderer>(), Fill = new List<LineRenderer>();
-            public float[] Pulse = new float[0];
-            public float[] LastFill = new float[0];
-            public float Alpha;
-        }
-
-        private readonly Dictionary<BallData, Ring> _rings = new Dictionary<BallData, Ring>();
-        private Material _mat;
-
-        private void OnDestroy() { Clear(); }
-        private void OnLevelWasLoaded(int level) { Clear(); DashTracker.Clear(); }
-
-        private void Clear()
-        {
-            foreach (var r in _rings.Values) if (r.Root != null) Destroy(r.Root);
-            _rings.Clear();
-        }
+        private void OnDestroy() { _bars.Clear(); }
+        private void OnLevelWasLoaded(int level) { _bars.Clear(); DashTracker.Clear(); PlayerBar.ClearCache(); }
 
         private void LateUpdate()
         {
             var gm = Globals.gameManager;
-            if (gm == null || gm.teams == null) { if (_rings.Count > 0) Clear(); return; }
+            if (gm == null || gm.teams == null) { if (_bars.Count > 0) _bars.Clear(); return; }
             DashTracker.Tick(Time.deltaTime);
-            if (_mat == null)
-            {
-                var shader = Shader.Find("Sprites/Default") ?? Shader.Find("Particles/Alpha Blended") ?? Shader.Find("Unlit/Color");
-                _mat = new Material(shader);
-            }
-
+            var always = DashMeter.Instance != null && DashMeter.Instance.Always.Value;
             var seen = new HashSet<BallData>();
             foreach (var team in gm.teams)
                 foreach (var b in team.members)
                 {
                     if (b == null) continue;
                     seen.Add(b);
-                    UpdateRing(b, gm);
+                    int max; float charges;
+                    var known = DashTracker.Get(b, out max, out charges);
+                    var visible = known && b.alive && !b.fallen && !gm.replayManager.replaying;
+                    _bars.For(b).Set(b, Mathf.Max(1, max), charges, visible, always,
+                        new Color(1f, 1f, 1f, 0.8f), Color.white, 0.5f, 0.78f, 0.09f);
                 }
-            var gone = new List<BallData>();
-            foreach (var kv in _rings) if (!seen.Contains(kv.Key)) gone.Add(kv.Key);
-            foreach (var b in gone) { if (_rings[b].Root != null) Destroy(_rings[b].Root); _rings.Remove(b); }
-        }
-
-        private void UpdateRing(BallData b, GameManager gm)
-        {
-            int max; float charges;
-            var known = DashTracker.Get(b, out max, out charges);
-            var visible = known && b.alive && !b.fallen && !gm.replayManager.replaying;
-            Ring ring;
-            if (!_rings.TryGetValue(b, out ring)) _rings[b] = ring = new Ring { Root = new GameObject("DashRing") };
-            if (ring.Back.Count != max) Build(ring, max);
-
-            var full = charges >= max - 0.001f;
-            var always = DashMeter.Instance != null && DashMeter.Instance.Always.Value;
-            var target = visible && (always || !full) ? 1f : 0f;
-            // Linger a moment after the last charge fills so the "ready" pulse is seen.
-            var fade = target > ring.Alpha ? 10f : (ring.Pulse.Length > 0 && Max(ring.Pulse) > 0.01f ? 0f : 2.5f);
-            ring.Alpha = Mathf.MoveTowards(ring.Alpha, target, Time.deltaTime * fade);
-            ring.Root.SetActive(ring.Alpha > 0.01f && visible);
-            if (!ring.Root.activeSelf) return;
-
-            var c = VisualCenter(b);
-            var segLen = (BarLength - SegGap * (max - 1)) / max;
-            var x0 = c.x - BarLength / 2f;
-            var y = c.y + Above;
-            for (var i = 0; i < max; i++)
-            {
-                var fill = Mathf.Clamp01(charges - i); // 1 = this charge is ready
-                if (fill >= 1f && ring.LastFill[i] < 1f) ring.Pulse[i] = 1f; // just became ready
-                ring.LastFill[i] = fill;
-                ring.Pulse[i] = Mathf.MoveTowards(ring.Pulse[i], 0f, Time.deltaTime * 3f);
-
-                var sx = x0 + i * (segLen + SegGap);
-                SetLine(ring.Back[i], sx, sx + segLen, y, c.z, Thickness, new Color(0.08f, 0.08f, 0.1f, 0.75f * ring.Alpha));
-                // White whether full or filling (a filling segment is slightly dimmer); drawn in front of the background.
-                var a = (fill >= 1f ? 1f : 0.8f) * ring.Alpha;
-                SetLine(ring.Fill[i], sx, sx + segLen * fill, y, c.z - 0.03f, Thickness * (1f + ring.Pulse[i] * 0.8f), new Color(1f, 1f, 1f, a));
-            }
-        }
-
-        /// <summary>
-        /// The ball's top face as the camera sees it: the camera is tilted, so a ring at the ball's centre depth
-        /// would look offset. Use the mesh's bounds (x/y centre, nearest-to-camera z).
-        /// </summary>
-        private readonly Dictionary<BallData, Renderer> _meshes = new Dictionary<BallData, Renderer>();
-        private Vector3 VisualCenter(BallData b)
-        {
-            Renderer r;
-            if (!_meshes.TryGetValue(b, out r) || r == null)
-            {
-                r = b.ballMesh != null ? b.ballMesh.GetComponentInChildren<Renderer>() : null;
-                _meshes[b] = r;
-            }
-            if (r == null || !r.enabled) return b.transform.position + new Vector3(0f, 0f, -0.05f);
-            var bounds = r.bounds;
-            return new Vector3(bounds.center.x, bounds.center.y, bounds.min.z - 0.02f);
-        }
-
-        private static float Max(float[] a) { var m = 0f; foreach (var v in a) if (v > m) m = v; return m; }
-
-        private void Build(Ring ring, int max)
-        {
-            foreach (var l in ring.Back) Destroy(l.gameObject);
-            foreach (var l in ring.Fill) Destroy(l.gameObject);
-            ring.Back.Clear(); ring.Fill.Clear();
-            for (var i = 0; i < max; i++)
-            {
-                ring.Back.Add(NewLine(ring.Root.transform, "back", 0));
-                ring.Fill.Add(NewLine(ring.Root.transform, "fill", 1)); // always drawn over the background
-            }
-            ring.Pulse = new float[max];
-            ring.LastFill = new float[max];
-            for (var i = 0; i < max; i++) ring.LastFill[i] = 1f;
-        }
-
-        private LineRenderer NewLine(Transform parent, string name, int order)
-        {
-            var go = new GameObject(name);
-            go.transform.SetParent(parent, false);
-            var lr = go.AddComponent<LineRenderer>();
-            lr.useWorldSpace = true;
-            lr.sharedMaterial = _mat;
-            lr.receiveShadows = false;
-            lr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            lr.sortingOrder = order;
-            lr.SetVertexCount(2);
-            return lr;
-        }
-
-        private static void SetLine(LineRenderer lr, float xFrom, float xTo, float y, float z, float width, Color color)
-        {
-            if (xTo - xFrom < 0.005f) { lr.enabled = false; return; }
-            lr.enabled = true;
-            lr.SetWidth(width, width);
-            lr.SetColors(color, color);
-            lr.SetPosition(0, new Vector3(xFrom, y, z));
-            lr.SetPosition(1, new Vector3(xTo, y, z));
+            _bars.Prune(seen);
         }
     }
 }

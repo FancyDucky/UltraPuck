@@ -14,7 +14,7 @@ namespace CP99Online
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "cp99.online";
-        public const string Version = "0.8.0";
+        public const string Version = "0.8.1";
 
         internal static ManualLogSource Logger_;
         internal static ConfigEntry<bool> NoBoostSlowdown;
@@ -93,6 +93,7 @@ namespace CP99Online
             gameObject.AddComponent<ModMenu>();
             gameObject.AddComponent<Toast>();
             gameObject.AddComponent<Rounds.CardUI>();
+            gameObject.AddComponent<Rounds.GunBarView>();
             gameObject.AddComponent<TestHarness>();
             SceneDump.Dir = Path.GetDirectoryName(Info.Location);
             gameObject.AddComponent<SceneDump>();
