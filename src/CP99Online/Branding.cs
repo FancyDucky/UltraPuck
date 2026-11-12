@@ -29,7 +29,7 @@ namespace CP99Online
         private static bool _loadFailed;
 
         // Where the original lettering sits inside the logo quad, as fractions of the quad (tuned by screenshot).
-        internal static float LetterLeft = 0.08f, LetterTop = 0.125f, LetterHeight = 0.66f;
+        internal static float LetterLeft = 0.08f, LetterTop = 0.15f, LetterHeight = 0.6f; // no wider than the old logo, so it slides fully off-screen with the menu
         private const float LineGap = 0.2f; // space between "Ultra" and "Puck", as a fraction of a line's height
 
         private void OnLevelWasLoaded(int level) { _titles.Clear(); _nextScan = 0f; }
@@ -192,6 +192,50 @@ namespace CP99Online
             _versionStyle.fontSize = Mathf.Max(12, Mathf.RoundToInt(Screen.height * 0.032f));
             var pad = Screen.height * 0.025f;
             GUI.Label(new Rect(0f, 0f, Screen.width - pad, Screen.height - pad), "UltraPuck v" + Plugin.Version, _versionStyle);
+            DrawHostingBadge(pad);
+        }
+
+        private GUIStyle _badgeTitle, _badgeSub;
+
+        /// <summary>
+        /// Top-right while hosting: the game keeps hosting after you back out of Play Online, so show it on every
+        /// main menu screen (with how many friends have joined).
+        /// </summary>
+        private void DrawHostingBadge(float pad)
+        {
+            var s = Net.NetSession.Instance;
+            if (s == null || s.Role != Net.Role.Host) return;
+            if (_badgeTitle == null)
+            {
+                _badgeTitle = new GUIStyle(_versionStyle) { alignment = TextAnchor.MiddleLeft };
+                _badgeTitle.normal.textColor = Color.white;
+                _badgeSub = new GUIStyle(_badgeTitle);
+                _badgeSub.normal.textColor = new Color(1f, 1f, 1f, 0.75f);
+            }
+            var u = Screen.height / 1080f;
+            _badgeTitle.fontSize = Mathf.Max(12, Mathf.RoundToInt(36 * u));
+            _badgeSub.fontSize = Mathf.Max(11, Mathf.RoundToInt(26 * u));
+
+            var n = s.ClientCount;
+            var sub = n == 0 ? "Waiting for friends" : n == 1 ? "1 friend joined" : n + " friends joined";
+            var titleW = _badgeTitle.CalcSize(new GUIContent("Hosting")).x;
+            var subW = _badgeSub.CalcSize(new GUIContent(sub)).x;
+            var dot = 16 * u;
+            var w = Mathf.Max(dot + 12 * u + titleW, subW) + 36 * u;
+            var h = 108 * u;
+            var r = new Rect(Screen.width - pad - w, pad, w, h);
+
+            var old = GUI.color;
+            GUI.color = new Color(0f, 0f, 0f, 0.45f);
+            GUI.DrawTexture(r, Texture2D.whiteTexture);
+            // green "live" dot that gently pulses
+            var pulse = 0.65f + 0.35f * Mathf.Sin(Time.realtimeSinceStartup * 3f);
+            GUI.color = new Color(0.35f, 0.9f, 0.45f, pulse);
+            var titleRect = new Rect(r.x + 18 * u, r.y + 8 * u, w - 36 * u, 54 * u);
+            GUI.DrawTexture(new Rect(titleRect.x, titleRect.center.y - dot / 2f, dot, dot), Texture2D.whiteTexture);
+            GUI.color = old;
+            GUI.Label(new Rect(titleRect.x + dot + 12 * u, titleRect.y, titleW + 4 * u, titleRect.height), "Hosting", _badgeTitle);
+            GUI.Label(new Rect(titleRect.x, r.y + 60 * u, w - 36 * u, 40 * u), sub, _badgeSub);
         }
 
         private static Color Hsv(float h, float s, float v)
