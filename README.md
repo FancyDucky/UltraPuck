@@ -67,3 +67,7 @@ Layout:
 
 Built on [BepInEx](https://github.com/BepInEx/BepInEx) (LGPL-2.1) and [HarmonyX](https://github.com/BepInEx/HarmonyX) (MIT).
 Not affiliated with the developers of ClusterPuck 99.
+
+## Credits
+
+The main menu title uses the [Chakra Petch](https://fonts.google.com/specimen/Chakra+Petch) font by The Chakra Petch Project Authors, under the SIL Open Font License 1.1.

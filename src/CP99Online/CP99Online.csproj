@@ -33,6 +33,12 @@
     <Reference Include="0Harmony"><HintPath>$(BepInExCore)\0Harmony.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Main menu title letters, rendered from the Chakra Petch font (SIL Open Font License). -->
+    <EmbeddedResource Include="Assets\title-ultra.png" LogicalName="UltraPuck.title-ultra.png" />
+    <EmbeddedResource Include="Assets\title-puck.png" LogicalName="UltraPuck.title-puck.png" />
+  </ItemGroup>
+
   <Target Name="DeployToGame" AfterTargets="Build">
     <MakeDir Directories="$(GameDir)\BepInEx\plugins\CP99Online" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(GameDir)\BepInEx\plugins\CP99Online" />
