@@ -179,6 +179,8 @@ namespace CP99Online.Rounds
         // Extra reach against players only (not walls), so tiny differences between the host's and a client's view of
         // a player don't turn a hit on screen into a miss.
         private const float PlayerLeeway = 0.1f;
+        /// <summary>Speed the puck gets when a shot hits it (the game caps the puck at 90).</summary>
+        private const float PuckKnock = 30f;
 
         private static readonly Dictionary<ushort, PuckGunShot> _shots = new Dictionary<ushort, PuckGunShot>();
         private static ushort _nextShot = 1;
@@ -323,12 +325,20 @@ namespace CP99Online.Rounds
                     var ball = c.GetComponent<BallData>();
                     if (ball != null)
                     {
-                        if (ball == Owner || !ball.alive || gm.teams.IndexOf(ball.team) == Team) continue; // passes teammates
-                        Stun.Hit(ball, Velocity.normalized);
+                        if (ball == Owner || !ball.alive) continue; // hits teammates too
+                        Stun.Hit(ball, Velocity.normalized, Owner);
                         End(hit.centroid);
                         return;
                     }
-                    if (IsPylon(c) || (_wallMask & (1 << c.gameObject.layer)) != 0) // walls; the floor and the puck are ignored
+                    var puck = c.GetComponent<Puck>();
+                    if (puck != null)
+                    {
+                        if (Owner != null && puck.carryer == Owner.gameObject) continue; // the shooter's own puck
+                        HitPuck(puck, Velocity.normalized);
+                        End(hit.centroid);
+                        return;
+                    }
+                    if (IsPylon(c) || (_wallMask & (1 << c.gameObject.layer)) != 0) // walls; the floor is ignored
                     {
                         NetLog.Debug("Puck Gun shot " + Id + " stopped by " + c.name + " (layer " + LayerMask.LayerToName(c.gameObject.layer) + ")");
                         End(hit.centroid);
@@ -337,6 +347,16 @@ namespace CP99Online.Rounds
                 }
                 transform.position += (Vector3)step;
                 if (_age > ShotLife) End(transform.position);
+            }
+
+            /// <summary>Knock the puck away (out of a carrier's hands, if someone has it).</summary>
+            private static void HitPuck(Puck puck, Vector2 dir)
+            {
+                var carrier = puck.carryer != null ? puck.carryer.GetComponent<BallData>() : null;
+                if (carrier != null) carrier.GetComponent<BallHandling>().Drop(puck.gameObject, 0.3f, false);
+                var rb = puck.GetComponent<Rigidbody2D>();
+                if (rb != null) rb.velocity = rb.velocity * 0.5f + dir * PuckKnock;
+                NetLog.Info("Rounds: Puck Gun hit the puck" + (carrier != null ? " (knocked loose)" : string.Empty));
             }
 
             private void End(Vector2 at)

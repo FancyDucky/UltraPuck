@@ -14,8 +14,8 @@ namespace CP99Online.Rounds
     internal static class Stun
     {
         internal const float Duration = 1f;
-        /// <summary>Knockback impulse: 3x a dash (the game's dash is a 250 force for one 0.02 s physics step = 5).</summary>
-        private const float KnockbackImpulse = 3f * CardEffects.GameDashForce * 0.02f;
+        /// <summary>Knockback impulse: 0.75x a dash (the game's dash is a 250 force for one 0.02 s physics step = 5).</summary>
+        private const float KnockbackImpulse = 0.75f * CardEffects.GameDashForce * 0.02f;
 
         private sealed class State { public float Until; public Vector2 From; }
         private static readonly Dictionary<BallData, State> _stunned = new Dictionary<BallData, State>();
@@ -23,19 +23,20 @@ namespace CP99Online.Rounds
 
         internal static void Clear() { _stunned.Clear(); _clientUntil.Clear(); }
 
-        /// <summary>Host / offline: a Puck Gun shot hit this player, travelling in <paramref name="dir"/>.</summary>
-        internal static void Hit(BallData b, Vector2 dir)
+        /// <summary>Host / offline: a Puck Gun shot from <paramref name="shooter"/> hit this player, travelling in <paramref name="dir"/>.</summary>
+        internal static void Hit(BallData b, Vector2 dir, BallData shooter)
         {
+            var push = KnockbackImpulse * CardEffects.FriendlyFireMul(shooter, b);
             var gm = Globals.gameManager;
             if (b.carryObject != null) b.GetComponent<BallHandling>().Drop(b.carryObject, Duration);
             var rb = b.GetComponent<Rigidbody2D>();
-            if (rb != null) rb.AddForce(dir * KnockbackImpulse, ForceMode2D.Impulse);
+            if (rb != null) rb.AddForce(dir * push, ForceMode2D.Impulse);
             _stunned[b] = new State { Until = Time.time + Duration, From = b.transform.position };
             var sm = gm != null ? gm.soundManager : null;
             if (sm != null && sm.thrustHitSound != null) sm.CreateSound(sm.thrustHitSound, 2f, 0.6f, 0.8f);
             var slot = Match.Slot(b);
             if (NetSession.HostInMatch && slot >= 0) NetSession.Instance.HostSendStun(slot, Duration);
-            NetLog.Info("Rounds: Puck Gun stunned " + Name(b) + " (knockback impulse " + KnockbackImpulse.ToString("F1") + ")");
+            NetLog.Info("Rounds: Puck Gun stunned " + Name(b) + " (knockback impulse " + push.ToString("F2") + ")");
         }
 
         /// <summary>Client: the host says this slot was stunned.</summary>

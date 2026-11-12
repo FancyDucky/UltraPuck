@@ -19,7 +19,7 @@ namespace CP99Online.Rounds
 
         private static readonly Dictionary<BallChargeMeter, LineRenderer[]> _rings = new Dictionary<BallChargeMeter, LineRenderer[]>();
         private static bool _logged;
-        private const float RingWidth = 0.2f; // as a fraction of the ring's radius
+        private const float RingWidth = 0.3f; // as a fraction of the ring's radius (a bit wider than the game's ring, to cover it)
 
         private static void Postfix(BallChargeMeter __instance)
         {
@@ -74,7 +74,7 @@ namespace CP99Online.Rounds
             var like = m.lineRenderer;
             var src = like.gameObject;
             var lr = new GameObject().AddComponent<LineRenderer>();
-            var w = m.circleRadius * RingWidth; // the game's ring is about this thick (measured from screenshots)
+            var w = m.circleRadius * RingWidth;
             lr.SetWidth(w, w);
             lr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             lr.receiveShadows = false;

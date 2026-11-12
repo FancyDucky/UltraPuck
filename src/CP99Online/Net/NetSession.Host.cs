@@ -207,6 +207,18 @@ namespace CP99Online.Net
             input.Held = r.U8();
             for (var i = 0; i < 3; i++) input.DownCount[i] = r.U8();
             input.ChargeUpCount = r.U8();
+            input.SwitchCount = r.U8();
+        }
+
+        /// <summary>Bot switching: tell everyone who controls which ball.</summary>
+        internal void HostSendPossession()
+        {
+            if (_clients.Count == 0) return;
+            var state = Possession.State();
+            Begin(Msg.Possess);
+            _msg.U8(state.Count);
+            foreach (var kv in state) { _msg.U8(kv.Key); _msg.U8(kv.Value); }
+            BroadcastReliable();
         }
 
         private void DropClient(int peer, string why)
@@ -219,7 +231,11 @@ namespace CP99Online.Net
                 _clients.Remove(peer);
                 if (Match.Owners != null)
                     for (var s = 0; s < Match.Owners.Count; s++)
-                        if (Match.Owners[s] == ci.Id) NetInput.BySlot.Remove(s); // their ball just stops
+                        if (Match.Owners[s] == ci.Id)
+                        {
+                            NetInput.BySlot.Remove(s); // their ball just stops
+                            Possession.Release(Match.Ball(s)); // and a bot they took over goes back to the AI
+                        }
             }
             _conns.Remove(peer);
             if (_transport != null) _transport.Disconnect(peer);

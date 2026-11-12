@@ -36,8 +36,11 @@ namespace UltraPuck
         public float PickupRange = 1f;
         /// <summary>Pylons (a solid dummy player) placed in front of your team's net.</summary>
         public int Pylons;
-        /// <summary>Every dash fires a shot that stuns the first opponent it hits for 1 s and knocks them back.</summary>
+        /// <summary>Every dash fires a shot that stuns the first player it hits (teammates too) for 1 s and knocks them back,
+        /// or knocks the puck away.</summary>
         public bool PuckGun;
+        /// <summary>How hard your dash checks and Puck Gun shots push teammates (3.5 = +250%).</summary>
+        public float FriendlyFire = 1f;
     }
 
     /// <summary>
@@ -84,6 +87,7 @@ namespace UltraPuck
             new QuickRechargeCard(), new HeavyweightCard(), new FeatherweightCard(),
             new OverChargeCard(), new SlowPokeCard(), new HeadStartCard(),
             new PylonGoalieCard(), new PuckMagnetCard(), new PuckGunCard(),
+            new FriendlyFireCard(),
         };
 
         /// <summary>Every registered card, built-in ones first.</summary>
@@ -250,9 +254,19 @@ namespace UltraPuck
     {
         public override string Id { get { return "ultrapuck.puckgun"; } }
         public override string Name { get { return "Puck Gun"; } }
-        public override string Description { get { return "Every dash fires a shot. The first opponent it hits gets a " + CardText.Good("1 s Stun") + " and is knocked back 3x as far as a dash pushes."; } }
+        public override string Description { get { return "Every dash fires a shot. The first player it hits (teammates too) gets a " + CardText.Good("1 s Stun") + " and a small knockback. It also knocks the puck away."; } }
         public override Color Color { get { return new Color(0.80f, 0.20f, 0.25f); } }
         public override int MaxPerPlayer { get { return 1; } }
         public override void Apply(CardStats s) { s.PuckGun = true; }
+    }
+
+    internal sealed class FriendlyFireCard : UltraCard
+    {
+        public override string Id { get { return "ultrapuck.friendlyfire"; } }
+        public override string Name { get { return "Friendly Fire"; } }
+        public override string Description { get { return CardText.Stat(3.5f, "Teammate Knockback", true) + "\nDash into a teammate to launch them. Works with Puck Gun too."; } }
+        public override Color Color { get { return new Color(1.00f, 0.45f, 0.35f); } }
+        public override int MaxPerPlayer { get { return 1; } }
+        public override void Apply(CardStats s) { s.FriendlyFire *= 3.5f; }
     }
 }

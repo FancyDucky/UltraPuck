@@ -171,6 +171,14 @@ namespace CP99Online.Net
                 case Msg.Pylons:
                     ClientHandlePylons(r);
                     break;
+                case Msg.Possess:
+                    {
+                        var n = r.U8();
+                        var state = new List<KeyValuePair<int, int>>();
+                        for (var i = 0; i < n; i++) { int home = r.U8(); state.Add(new KeyValuePair<int, int>(home, r.U8())); }
+                        if (Match.Active) Possession.ClientApply(state);
+                    }
+                    break;
                 case Msg.Nav:
                     _navMenu = r.Str();
                     _navElement = r.Str();
@@ -389,7 +397,8 @@ namespace CP99Online.Net
                 if (bi.axisName_x2 == "Mouse X" && bi.axisName_y2 == "Mouse Y" && gm != null && gm.gameCam != null)
                 {
                     // Same mouse-aim maths as BallHandling.Update, done here because BallHandling is off.
-                    var sp = gm.gameCam.GetComponent<Camera>().WorldToScreenPoint(bi.transform.position) - Input.mousePosition;
+                    var body = Possession.BodyOf(bi.GetComponent<BallData>()); // after a bot switch, aim from the ball you control
+                    var sp = gm.gameCam.GetComponent<Camera>().WorldToScreenPoint(body != null ? body.transform.position : bi.transform.position) - Input.mousePosition;
                     aim = new Vector2(sp.y, -sp.x);
                     if (aim.magnitude > 1f) aim = aim.normalized;
                 }
@@ -409,6 +418,7 @@ namespace CP99Online.Net
             _msg.U8(held);
             for (var i = 0; i < 3; i++) _msg.U8(_downCount[i]);
             _msg.U8(_chargeUpCount);
+            _msg.U8(Possession.ClientSwitchCount);
             c.SendUnreliable(_msg);
         }
 

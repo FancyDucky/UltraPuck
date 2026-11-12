@@ -19,6 +19,16 @@ namespace CP99Online.Net
             public uint Seq;
             public readonly byte[] DownCount = new byte[3]; // shoot, callpass, charge
             public byte ChargeUpCount;
+            public byte SwitchCount; // bot switching presses
+            private byte _seenSwitch;
+
+            /// <summary>Host: did the player press switch since the last call?</summary>
+            public bool SwitchDown()
+            {
+                if (SwitchCount == _seenSwitch) return false;
+                _seenSwitch = SwitchCount;
+                return true;
+            }
 
             private int _frame = -1;
             private readonly byte[] _seenDown = new byte[3];
@@ -44,6 +54,7 @@ namespace CP99Online.Net
             {
                 for (var i = 0; i < 3; i++) _seenDown[i] = DownCount[i];
                 _seenUp = ChargeUpCount;
+                _seenSwitch = SwitchCount;
             }
 
             public bool Down(int i) { Refresh(); return _down[i]; }

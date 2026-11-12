@@ -73,6 +73,7 @@ namespace CP99Online
             if (_role == "host" && Match.Active && !_goalsSet) { _goalsSet = true; int g; NumGoalsToWinManager.numGoalsToWin = int.TryParse(Environment.GetEnvironmentVariable("CP99_ROUNDS_GOALS"), out g) ? g : 3; NetLog.Info("TEST rounds: goals to win = " + NumGoalsToWinManager.numGoalsToWin); }
             if (!Match.Active) { _goalsSet = false; }
             DashBurst();
+            SwitchStep();
             OverChargeTest();
             OverChargeShot();
             PylonPush();
@@ -180,6 +181,7 @@ namespace CP99Online
                 {
                     var o = MenuGlobals.menuManager.playerSelectionOptions_Manager;
                     o.numTeam0AIScroller.Scroll(1);
+                    if (SwitchTest) o.numTeam1AIScroller.Scroll(1); // a bot for the client too
                     Next(t, "client is on team 2; host adds a bot to team 1 (screenshot time)");
                 }
                 else if (_step == 3 && t - _stepAt > 6f)
@@ -342,7 +344,7 @@ namespace CP99Online
 
         // Over Charge (host): hand the puck to the first player with Over Charge, hold the charge until it stops rising,
         // log it ("overcharge full"), keep holding 4 s for screenshots, then shoot and log the puck's speed.
-        private float _ocHoldSince = -1f, _ocFullAt = -1f, _ocShotAt = -1f, _ocNext, _ocLast;
+        private float _ocHoldSince = -1f, _ocFullAt = -1f, _ocShotAt = -1f, _ocNext, _ocLast, _ocTop;
         private int _ocCount;
 
         // Every PC: when any ball has been over-charged for 0.4 s, save a screenshot (once per card count), so the
@@ -376,10 +378,12 @@ namespace CP99Online
             if (seat == null) return;
             var now = Time.realtimeSinceStartup;
             var h = seat.Ball.GetComponent<BallHandling>();
-            if (_ocShotAt > 0f && now - _ocShotAt > 0.12f)
+            if (_ocShotAt > 0f)
             {
-                NetLog.Info("TEST overcharge shot: puck speed " + gm.puck.GetComponent<Rigidbody2D>().velocity.magnitude.ToString("F1") + " cap " + Rounds.CardEffects.PuckCap().ToString("F0"));
-                _ocShotAt = -1f; _ocNext = now + 3f;
+                _ocTop = Mathf.Max(_ocTop, gm.puck.GetComponent<Rigidbody2D>().velocity.magnitude);
+                if (now - _ocShotAt < 0.3f) return;
+                NetLog.Info("TEST overcharge shot: top puck speed " + _ocTop.ToString("F1") + " (game cap 90, card cap " + Rounds.CardEffects.PuckCap().ToString("F0") + ", unity limit " + Physics2D.maxTranslationSpeed.ToString("F0") + ")");
+                _ocShotAt = -1f; _ocNext = now + 3f; _ocTop = 0f;
             }
             if (_ocHoldSince < 0f)
             {
@@ -402,11 +406,35 @@ namespace CP99Online
                 NetLog.Info("TEST overcharge full #" + _ocCount + ": charge " + h.ballCharge.ToString("F2") + " (max " + Rounds.CardEffects.MaxCharge(h).ToString("F2") + ") after " + (now - _ocHoldSince).ToString("F2") + " s");
             }
             _ocLast = h.ballCharge;
-            if (_ocFullAt > 0f && now - _ocFullAt > 4f)
+            if (_ocFullAt > 0f)
             {
+                // Shoot right away, the same call the game makes on release (the client's test input would otherwise
+                // fire a quick shot first).
                 NetLog.Info("TEST overcharge release at charge " + h.ballCharge.ToString("F2"));
-                h.AICharging = false; _ocHoldSince = -1f; _ocShotAt = now;
+                h.AICharging = false; _ocHoldSince = -1f; _ocShotAt = now; _ocTop = 0f;
+                h.Shoot(seat.Ball.carryObject, 0.15f, h.ballCharge);
             }
+        }
+
+        // Bot switching (CP99_TEST_SWITCH=1): host and client each press switch every 3 s during play.
+        private static readonly bool SwitchTest = Environment.GetEnvironmentVariable("CP99_TEST_SWITCH") == "1";
+        private float _nextSwitch;
+
+        private void SwitchStep()
+        {
+            if (!SwitchTest || !Match.Active || Rounds.CardGame.PhaseActive) return;
+            var gm = Globals.gameManager;
+            if (gm == null || gm.startCountdown > 0f || Time.realtimeSinceStartup < _nextSwitch) return;
+            _nextSwitch = Time.realtimeSinceStartup + 3f;
+            if (_role == "client") { Possession.ClientSwitchCount++; NetLog.Info("TEST switch: client pressed switch (" + Possession.ClientSwitchCount + ")"); return; }
+            var home = Match.Balls.FirstOrDefault(b => b != null && b.playerData != null && !b.playerData.AI && !Match.IsRemote(Match.Slot(b)));
+            if (home != null) Possession.Request(home);
+            var d = new System.Text.StringBuilder("TEST switch state:");
+            foreach (var b in Match.Balls)
+                if (b != null) d.Append(" | " + (b.playerData != null && b.playerData.account != null ? b.playerData.account.name : "?") + " ai=" + b.AI +
+                    " aiScript=" + b.GetComponent<BallAI_v2>().enabled + " ctrl=" + (Possession.ControllerOf(b) != null ? Possession.ControllerOf(b).playerData.account.name : "AI") +
+                    " v=" + b.GetComponent<Rigidbody2D>().velocity.magnitude.ToString("F1"));
+            NetLog.Info(d.ToString());
         }
 
         private static string Fmt(Vector3 v) { return "(" + v.x.ToString("F2") + "," + v.y.ToString("F2") + ")"; }

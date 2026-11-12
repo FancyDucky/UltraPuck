@@ -38,6 +38,17 @@ namespace CP99Online.Rounds
         internal const float MaxOverCharge = 2f;     // 4 Over Charge cards: +200%, a full blue ring
         private const float MaxChargeSpeed = 20f;    // 4 Over Charge cards double it 4 times (x16)
 
+        /// <summary>Friendly Fire: how hard this player pushes teammates (1 = normal).</summary>
+        internal static float FriendlyFireOf(CardStats st) { return Mathf.Clamp(st.FriendlyFire, 0.1f, 10f); }
+
+        /// <summary>Extra push when <paramref name="from"/> hits a teammate (Friendly Fire), else 1.</summary>
+        internal static float FriendlyFireMul(BallData from, BallData target)
+        {
+            if (from == null || target == null || from == target || from.team != target.team) return 1f;
+            var a = AppliedOf(from);
+            return a != null ? FriendlyFireOf(a.Stats) : 1f;
+        }
+
         internal static float OverChargeOf(CardStats st) { return Mathf.Clamp(st.OverCharge, 0f, MaxOverCharge); }
 
         /// <summary>
@@ -255,11 +266,21 @@ namespace CP99Online.Rounds
         internal static float PuckCap()
         {
             var gm = Globals.gameManager;
-            if (gm == null || gm.puck == null) return GamePuckCap;
-            var last = gm.puck.GetComponent<Puck>().lastCarryer;
-            var a = last != null ? AppliedOf(last.GetComponent<BallData>()) : null;
-            return a != null ? GamePuckCap * Mathf.Max(1f, a.Stats.ShotPower) * (1f + OverChargeOf(a.Stats)) : GamePuckCap;
+            var cap = GamePuckCap;
+            if (gm != null && gm.puck != null)
+            {
+                var last = gm.puck.GetComponent<Puck>().lastCarryer;
+                var a = last != null ? AppliedOf(last.GetComponent<BallData>()) : null;
+                if (a != null) cap = GamePuckCap * Mathf.Max(1f, a.Stats.ShotPower) * (1f + OverChargeOf(a.Stats));
+            }
+            // Unity's 2D physics has its own speed limit (Physics2D.maxTranslationSpeed, 100 by default) just above the
+            // game's 90, so a raised cap alone changes nothing: lift Unity's limit with it, and put it back after.
+            if (_baseTranslation < 0f) _baseTranslation = Physics2D.maxTranslationSpeed;
+            var want = Mathf.Max(_baseTranslation, cap * 1.1f);
+            if (!Mathf.Approximately(Physics2D.maxTranslationSpeed, want)) Physics2D.maxTranslationSpeed = want;
+            return cap;
         }
+        private static float _baseTranslation = -1f;
 
         /// <summary>
         /// A player's stats after cards, as changes from normal, for the stats tooltip. Works on every PC (it only
@@ -310,6 +331,7 @@ namespace CP99Online.Rounds
             if (st.OpponentSpeed < 0.999f) lines.Add(CardText.Stat(st.OpponentSpeed, "Opponent Move Speed", false));
             if (pylons > 0) lines.Add(CardText.Good("+" + Mathf.Min(pylons, 4) + " Pylon Goalie" + (pylons > 1 ? "s" : string.Empty)) + "  (your team's net)");
             if (st.PuckGun) lines.Add("Puck Gun: every dash fires a " + CardText.Good("1 s Stun") + " shot");
+            if (!Same(st.FriendlyFire, 1f)) lines.Add(CardText.Stat(FriendlyFireOf(st), "Teammate Knockback", true) + "  (dashes and Puck Gun)");
             if (lines.Count == 0) lines.Add("No changes from cards.");
             return lines;
         }
@@ -398,14 +420,17 @@ namespace CP99Online.Rounds
             yield return AccessTools.Method(typeof(BallShove), "OnCollisionStay2D");
         }
 
-        internal static float CheckForce(BallShove shove)
+        internal static float CheckForce(BallShove shove, Collision2D hit)
         {
             if (!CardGame.IsAuthority) return GameCheckForce;
-            var a = CardEffects.AppliedOf(shove.GetComponent<BallData>());
-            if (a == null || Mathf.Approximately(a.Stats.Weight, 1f)) return GameCheckForce;
+            var me = shove.GetComponent<BallData>();
+            var a = CardEffects.AppliedOf(me);
+            if (a == null) return GameCheckForce;
             var w = Mathf.Clamp(a.Stats.Weight, 0.1f, 10f);
-            Net.NetLog.Debug("Knockback Given: check force x" + w.ToString("F2"));
-            return GameCheckForce * w;
+            var ff = CardEffects.FriendlyFireMul(me, hit != null && hit.gameObject != null ? hit.gameObject.GetComponent<BallData>() : null);
+            if (Mathf.Approximately(w * ff, 1f)) return GameCheckForce;
+            Net.NetLog.Debug("Check force x" + w.ToString("F2") + (ff > 1.001f ? " (Friendly Fire x" + ff.ToString("F1") + ")" : string.Empty));
+            return GameCheckForce * w * ff;
         }
 
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> code)
@@ -418,6 +443,7 @@ namespace CP99Online.Rounds
                 {
                     n++;
                     yield return new CodeInstruction(OpCodes.Ldarg_0) { labels = ins.labels, blocks = ins.blocks };
+                    yield return new CodeInstruction(OpCodes.Ldarg_1);
                     yield return new CodeInstruction(OpCodes.Call, force);
                 }
                 else yield return ins;

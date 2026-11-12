@@ -29,6 +29,7 @@ namespace CP99Online.Net
         CardPick,       // c->h  u8 seat, u8 offer index
         CardShot,       // h->c  Puck Gun: u8 kind (0 fired: u16 id, u8 team, u8 slot, f32 x, y, vx, vy / 1 ended: u16 id / 2 stunned: u8 slot, f32 seconds)
         Pylons,         // h->c  unreliable: u8 n, n x {f32 x, f32 y} Pylon Goalie positions
+        Possess,        // h->c  bot switching: u8 n, n x {u8 home slot, u8 controlled slot}
     }
 
     internal enum Ev : byte
@@ -46,7 +47,7 @@ namespace CP99Online.Net
 
     internal static class Proto
     {
-        public const ushort Version = 7;
+        public const ushort Version = 8;
         /// <summary>Snapshot charge byte: 255 = this charge. Over Charge goes up to 3 x (1 + 2) = 9.</summary>
         public const float ChargeScale = 9f;
         public const int MaxClients = 7;

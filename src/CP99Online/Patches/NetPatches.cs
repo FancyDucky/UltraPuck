@@ -44,7 +44,7 @@ namespace CP99Online.Patches
         private static bool Prefix(BallInput __instance)
         {
             if (!NetSession.HostInMatch) return true;
-            var slot = Match.Slot(__instance.GetComponent<BallData>());
+            var slot = Possession.InputSlot(__instance.GetComponent<BallData>()); // whoever controls it (bot switching)
             if (!Match.IsRemote(slot)) return true;
             NetInput.Remote r;
             if (NetInput.BySlot.TryGetValue(slot, out r))
@@ -97,7 +97,7 @@ namespace CP99Online.Patches
     {
         private static void Prefix(BallHandling __instance)
         {
-            NetInput.SuppressKeys = NetSession.HostInMatch && Match.IsRemote(Match.Slot(__instance.GetComponent<BallData>()));
+            NetInput.SuppressKeys = NetSession.HostInMatch && Match.IsRemote(Possession.InputSlot(__instance.GetComponent<BallData>()));
         }
 
         private static void Postfix() { NetInput.SuppressKeys = false; }
