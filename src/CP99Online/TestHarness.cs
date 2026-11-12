@@ -73,6 +73,8 @@ namespace CP99Online
             if (_role == "host" && Match.Active && !_goalsSet) { _goalsSet = true; int g; NumGoalsToWinManager.numGoalsToWin = int.TryParse(Environment.GetEnvironmentVariable("CP99_ROUNDS_GOALS"), out g) ? g : 3; NetLog.Info("TEST rounds: goals to win = " + NumGoalsToWinManager.numGoalsToWin); }
             if (!Match.Active) { _goalsSet = false; }
             DashBurst();
+            OverChargeTest();
+            OverChargeShot();
             PylonPush();
             var cg = Rounds.CardGame.PhaseActive && !Rounds.CardGame.Revealing;
             if (!cg && _inPhase)
@@ -337,6 +339,75 @@ namespace CP99Online
         }
 
         private static int _diagCount;
+
+        // Over Charge (host): hand the puck to the first player with Over Charge, hold the charge until it stops rising,
+        // log it ("overcharge full"), keep holding 4 s for screenshots, then shoot and log the puck's speed.
+        private float _ocHoldSince = -1f, _ocFullAt = -1f, _ocShotAt = -1f, _ocNext, _ocLast;
+        private int _ocCount;
+
+        // Every PC: when any ball has been over-charged for 0.4 s, save a screenshot (once per card count), so the
+        // rings are captured at the right moment on host and client.
+        private float _ocSeenSince = -1f;
+        private readonly HashSet<int> _ocShots = new HashSet<int>();
+
+        private void OverChargeShot()
+        {
+            var ball = Rounds.CardGame.Seats.Select(x => x.Ball).FirstOrDefault(b => b != null && b.GetComponent<BallHandling>().ballCharge > 3.2f);
+            if (ball == null) { _ocSeenSince = -1f; return; }
+            var now = Time.realtimeSinceStartup;
+            if (_ocSeenSince < 0f) { _ocSeenSince = now; return; }
+            if (now - _ocSeenSince < 0.4f) return;
+            var seat = Rounds.CardGame.Seats.First(x => x.Ball == ball);
+            var cards = seat.Cards.Count(id => id == "ultrapuck.fastercharge");
+            if (!_ocShots.Add(cards)) return;
+            var dir = Environment.GetEnvironmentVariable("CP99_SHOTDIR");
+            if (string.IsNullOrEmpty(dir)) return;
+            var path = System.IO.Path.Combine(dir, "ring_" + _role + "_" + cards + ".png");
+            Application.CaptureScreenshot(path);
+            NetLog.Info("TEST ring screenshot " + path + " charge " + ball.GetComponent<BallHandling>().ballCharge.ToString("F2"));
+        }
+
+        private void OverChargeTest()
+        {
+            if (_role != "host") return;
+            var gm = Globals.gameManager;
+            if (gm == null || gm.puck == null || Rounds.CardGame.PhaseActive || gm.startCountdown > 0f || gm.roundOver) { _ocHoldSince = -1f; return; }
+            var seat = Rounds.CardGame.Seats.OrderByDescending(x => x.Human).FirstOrDefault(x => x.Ball != null && x.Ball.alive && Rounds.CardEffects.AppliedOf(x.Ball) != null && Rounds.CardEffects.AppliedOf(x.Ball).Stats.OverCharge > 0f);
+            if (seat == null) return;
+            var now = Time.realtimeSinceStartup;
+            var h = seat.Ball.GetComponent<BallHandling>();
+            if (_ocShotAt > 0f && now - _ocShotAt > 0.12f)
+            {
+                NetLog.Info("TEST overcharge shot: puck speed " + gm.puck.GetComponent<Rigidbody2D>().velocity.magnitude.ToString("F1") + " cap " + Rounds.CardEffects.PuckCap().ToString("F0"));
+                _ocShotAt = -1f; _ocNext = now + 3f;
+            }
+            if (_ocHoldSince < 0f)
+            {
+                if (now < _ocNext || _ocShotAt > 0f) return;
+                if (seat.Ball.carryObject == null)
+                {
+                    gm.puck.transform.position = seat.Ball.transform.position + seat.Ball.transform.up * 0.4f;
+                    gm.puck.GetComponent<Rigidbody2D>().velocity = Vector2.zero;
+                    return;
+                }
+                _ocHoldSince = now; _ocFullAt = -1f; _ocLast = 0f;
+                h.AICharging = true;
+                return;
+            }
+            if (seat.Ball.carryObject == null) { h.AICharging = false; _ocHoldSince = -1f; _ocNext = now + 1f; return; }
+            h.AICharging = true;
+            if (_ocFullAt < 0f && now - _ocHoldSince > 0.2f && Mathf.Approximately(h.ballCharge, _ocLast))
+            {
+                _ocFullAt = now; _ocCount++;
+                NetLog.Info("TEST overcharge full #" + _ocCount + ": charge " + h.ballCharge.ToString("F2") + " (max " + Rounds.CardEffects.MaxCharge(h).ToString("F2") + ") after " + (now - _ocHoldSince).ToString("F2") + " s");
+            }
+            _ocLast = h.ballCharge;
+            if (_ocFullAt > 0f && now - _ocFullAt > 4f)
+            {
+                NetLog.Info("TEST overcharge release at charge " + h.ballCharge.ToString("F2"));
+                h.AICharging = false; _ocHoldSince = -1f; _ocShotAt = now;
+            }
+        }
 
         private static string Fmt(Vector3 v) { return "(" + v.x.ToString("F2") + "," + v.y.ToString("F2") + ")"; }
     }

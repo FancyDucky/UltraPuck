@@ -46,7 +46,9 @@ namespace CP99Online.Net
 
     internal static class Proto
     {
-        public const ushort Version = 6;
+        public const ushort Version = 7;
+        /// <summary>Snapshot charge byte: 255 = this charge. Over Charge goes up to 3 x (1 + 2) = 9.</summary>
+        public const float ChargeScale = 9f;
         public const int MaxClients = 7;
         public const float Timeout = 10f;
         public const float SendRate = 1f / 60f;

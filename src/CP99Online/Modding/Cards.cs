@@ -26,6 +26,8 @@ namespace UltraPuck
         public float Size = 1f;
         /// <summary>How fast a charge shot fills up (1.35 = 35% faster). Shot Power is how hard the shot is.</summary>
         public float ChargeSpeed = 1f;
+        /// <summary>How far a charge shot can fill past full, as a fraction of a full charge (0.5 = up to 50% more power).</summary>
+        public float OverCharge;
         /// <summary>Multiplies the movement speed of every opponent (0.9 = opponents 10% slower).</summary>
         public float OpponentSpeed = 1f;
         /// <summary>How far toward the puck you start each face-off (0.2 = 20% closer).</summary>
@@ -80,7 +82,7 @@ namespace UltraPuck
         {
             new DoubleDashCard(), new SpeedUpCard(), new PowerShotCard(),
             new QuickRechargeCard(), new HeavyweightCard(), new FeatherweightCard(),
-            new FasterChargeCard(), new SlowPokeCard(), new HeadStartCard(),
+            new OverChargeCard(), new SlowPokeCard(), new HeadStartCard(),
             new PylonGoalieCard(), new PuckMagnetCard(), new PuckGunCard(),
         };
 
@@ -189,14 +191,19 @@ namespace UltraPuck
         public override void Apply(CardStats s) { s.MoveSpeed *= 1.2f; s.Weight /= 3.5f; } // 3.5x lighter: +250% Knockback Taken, -71% Knockback Given
     }
 
-    internal sealed class FasterChargeCard : UltraCard
+    /// <summary>
+    /// Over Charge: each card halves the time to a full charge shot, and lets the charge keep filling past full for
+    /// another 50% of the meter (drawn orange, then blue over it). A fully over-charged shot hits 50% harder per card.
+    /// </summary>
+    internal sealed class OverChargeCard : UltraCard
     {
-        public override string Id { get { return "ultrapuck.fastercharge"; } }
-        public override string Name { get { return "Faster Charge"; } }
-        public override string Description { get { return CardText.Stat(1.35f, "Charge-up Speed", true) + "\nCharge shots fill up faster."; } }
+        public override string Id { get { return "ultrapuck.fastercharge"; } } // the old Faster Charge id, so saved settings carry over
+        public override string Name { get { return "Over Charge"; } }
+        public override string Description { get { return CardText.Stat(0.5f, "Charge-up Time", false) + "\n" + CardText.Good("+50% Over Charge") +
+            "\nKeep holding past full: the meter keeps filling for a harder, faster charged shot."; } }
         public override Color Color { get { return new Color(0.95f, 0.55f, 0.20f); } }
-        public override int MaxPerPlayer { get { return 3; } }
-        public override void Apply(CardStats s) { s.ChargeSpeed *= 1.35f; }
+        public override int MaxPerPlayer { get { return 4; } }
+        public override void Apply(CardStats s) { s.ChargeSpeed *= 2f; s.OverCharge += 0.5f; }
     }
 
     internal sealed class SlowPokeCard : UltraCard

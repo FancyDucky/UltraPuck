@@ -176,6 +176,9 @@ namespace CP99Online.Rounds
 
         // Fired on every dash (so the dash cooldown limits it). A hit stuns the opponent (see Stun).
         private const float ShotSpeed = 26f, ShotRadius = 0.25f, ShotLife = 4f;
+        // Extra reach against players only (not walls), so tiny differences between the host's and a client's view of
+        // a player don't turn a hit on screen into a miss.
+        private const float PlayerLeeway = 0.1f;
 
         private static readonly Dictionary<ushort, PuckGunShot> _shots = new Dictionary<ushort, PuckGunShot>();
         private static ushort _nextShot = 1;
@@ -196,6 +199,17 @@ namespace CP99Online.Rounds
         internal static void ClientShot(ushort id, int team, int slot, Vector2 pos, Vector2 vel)
         {
             Spawn(id, team, pos, vel, null, false);
+        }
+
+        /// <summary>
+        /// Client: the host says the shot ended at <paramref name="at"/>. The client draws shots (like players)
+        /// InterpDelay late, so it is usually still on its way: let it fly there, then remove it.
+        /// </summary>
+        internal static void ClientEndShot(ushort id, Vector2 at)
+        {
+            PuckGunShot s;
+            if (_shots.TryGetValue(id, out s) && s != null) { s.EndAt = at; s.HasEnd = true; }
+            else EndShot(id);
         }
 
         internal static void EndShot(ushort id)
@@ -238,7 +252,10 @@ namespace CP99Online.Rounds
             public BallData Owner;
             public int Team;
             public bool Authority;
+            public Vector2 EndAt;
+            public bool HasEnd;
             private float _age;
+            private float _wait = -1f;
             private int _wallMask;
 
             private void Start()
@@ -253,7 +270,29 @@ namespace CP99Online.Rounds
             private void Update()
             {
                 if (Authority) return; // the host moves its shots in FixedUpdate
-                transform.position += (Vector3)(Velocity * Time.deltaTime);
+                // Clients see players NetSession.InterpDelay in the past; hold the shot back by the same amount so it
+                // lines up with them (otherwise it runs ahead and seems to pass through people the host says it missed).
+                var r = GetComponent<Renderer>();
+                if (_wait < 0f) { _wait = NetSession.InterpDelay; if (r != null) r.enabled = false; }
+                if (_wait > 0f)
+                {
+                    _wait -= Time.deltaTime;
+                    if (_wait > 0f) return;
+                    if (r != null) r.enabled = true;
+                    var trail = GetComponent<TrailRenderer>();
+                    if (trail != null) trail.Clear();
+                }
+                var step = Velocity * Time.deltaTime;
+                var pos = (Vector2)transform.position;
+                if (HasEnd && Vector2.Dot(EndAt - (pos + step), Velocity) <= 0f)
+                {
+                    transform.position = new Vector3(EndAt.x, EndAt.y, transform.position.z);
+                    _shots.Remove(Id);
+                    Destroy(gameObject, 0.02f);
+                    enabled = false;
+                    return;
+                }
+                transform.position += (Vector3)step;
                 _age += Time.deltaTime;
                 if (_age > ShotLife + 1f) { _shots.Remove(Id); Destroy(gameObject); }
             }
@@ -267,7 +306,12 @@ namespace CP99Online.Rounds
                 _age += dt;
                 var pos = (Vector2)transform.position;
                 var step = Velocity * dt;
-                foreach (var hit in Physics2D.CircleCastAll(pos, ShotRadius, Velocity.normalized, step.magnitude).OrderBy(h => h.distance))
+                // One cast a little wider (counts for players only) and one exact (walls, pylons), nearest first.
+                var hits = Physics2D.CircleCastAll(pos, ShotRadius + PlayerLeeway, Velocity.normalized, step.magnitude)
+                    .Where(h => h.collider != null && h.collider.GetComponent<BallData>() != null)
+                    .Concat(Physics2D.CircleCastAll(pos, ShotRadius, Velocity.normalized, step.magnitude)
+                        .Where(h => h.collider != null && h.collider.GetComponent<BallData>() == null));
+                foreach (var hit in hits.OrderBy(h => h.distance))
                 {
                     var c = hit.collider;
                     if (c == null || c.isTrigger) continue;
@@ -281,24 +325,24 @@ namespace CP99Online.Rounds
                     {
                         if (ball == Owner || !ball.alive || gm.teams.IndexOf(ball.team) == Team) continue; // passes teammates
                         Stun.Hit(ball, Velocity.normalized);
-                        End();
+                        End(hit.centroid);
                         return;
                     }
                     if (IsPylon(c) || (_wallMask & (1 << c.gameObject.layer)) != 0) // walls; the floor and the puck are ignored
                     {
                         NetLog.Debug("Puck Gun shot " + Id + " stopped by " + c.name + " (layer " + LayerMask.LayerToName(c.gameObject.layer) + ")");
-                        End();
+                        End(hit.centroid);
                         return;
                     }
                 }
                 transform.position += (Vector3)step;
-                if (_age > ShotLife) End();
+                if (_age > ShotLife) End(transform.position);
             }
 
-            private void End()
+            private void End(Vector2 at)
             {
                 _shots.Remove(Id);
-                if (NetSession.HostInMatch) NetSession.Instance.HostSendShotEnd(Id);
+                if (NetSession.HostInMatch) NetSession.Instance.HostSendShotEnd(Id, at);
                 Destroy(gameObject);
             }
         }

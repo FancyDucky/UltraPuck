@@ -34,6 +34,21 @@ namespace CP99Online.Rounds
         internal const float GameDashForce = 250f;   // BallShove.Shove: AddForce(transform.up * 250)
         private const float GameChargeSpeed = 2f;    // BallHandling.ballChargeSpeed
         private const float GamePuckCap = 90f;       // Puck.FixedUpdate speed limit
+        internal const float GameFullCharge = 3f;    // BallHandling.Update: ballCharge = Clamp(.., 0.5, 3)
+        internal const float MaxOverCharge = 2f;     // 4 Over Charge cards: +200%, a full blue ring
+        private const float MaxChargeSpeed = 20f;    // 4 Over Charge cards double it 4 times (x16)
+
+        internal static float OverChargeOf(CardStats st) { return Mathf.Clamp(st.OverCharge, 0f, MaxOverCharge); }
+
+        /// <summary>
+        /// Over Charge: how far this player's charge may fill (replaces the game's 3). Shot power is the charge itself,
+        /// so a charge of 4.5 (one card, held to the end) hits 50% harder than a normal full charge.
+        /// </summary>
+        internal static float MaxCharge(BallHandling h)
+        {
+            var a = h != null ? AppliedOf(h.GetComponent<BallData>()) : null;
+            return a != null ? GameFullCharge * (1f + OverChargeOf(a.Stats)) : GameFullCharge;
+        }
 
         private static readonly FieldInfo ChargeSpeedField = AccessTools.Field(typeof(BallHandling), "ballChargeSpeed");
         private static readonly Dictionary<BallData, Original> _orig = new Dictionary<BallData, Original>();
@@ -119,7 +134,7 @@ namespace CP99Online.Rounds
             b.mass = o.Mass * weight;
             var handling = b.GetComponent<BallHandling>();
             if (handling != null && ChargeSpeedField != null)
-                ChargeSpeedField.SetValue(handling, o.ChargeSpeed * Mathf.Clamp(st.ChargeSpeed, 0.2f, 5f));
+                ChargeSpeedField.SetValue(handling, o.ChargeSpeed * Mathf.Clamp(st.ChargeSpeed, 0.2f, MaxChargeSpeed));
 
             // Movement is a force divided by mass, so weight is cancelled out here: weight only changes knockback.
             _applied[b] = new Applied { Stats = st, SpeedFactor = Mathf.Clamp(st.MoveSpeed, 0.2f, 4f) * Mathf.Clamp(enemySlow, 0.2f, 1f) * weight };
@@ -243,7 +258,7 @@ namespace CP99Online.Rounds
             if (gm == null || gm.puck == null) return GamePuckCap;
             var last = gm.puck.GetComponent<Puck>().lastCarryer;
             var a = last != null ? AppliedOf(last.GetComponent<BallData>()) : null;
-            return a != null ? GamePuckCap * Mathf.Max(1f, a.Stats.ShotPower) : GamePuckCap;
+            return a != null ? GamePuckCap * Mathf.Max(1f, a.Stats.ShotPower) * (1f + OverChargeOf(a.Stats)) : GamePuckCap;
         }
 
         /// <summary>
@@ -283,7 +298,8 @@ namespace CP99Online.Rounds
             }
             if (!Same(st.Size, 1f)) lines.Add(CardText.Stat(Mathf.Clamp(st.Size, 0.3f, 3f), "Size", true, true));
             if (!Same(st.ShotPower, 1f)) lines.Add(CardText.Stat(Mathf.Clamp(st.ShotPower, 0.2f, 5f), "Shot Power", true));
-            if (!Same(st.ChargeSpeed, 1f)) lines.Add(CardText.Stat(Mathf.Clamp(st.ChargeSpeed, 0.2f, 5f), "Charge-up Speed", true));
+            if (!Same(st.ChargeSpeed, 1f)) lines.Add(CardText.Stat(1f / Mathf.Clamp(st.ChargeSpeed, 0.2f, MaxChargeSpeed), "Charge-up Time", false));
+            if (st.OverCharge > 0f) lines.Add(CardText.Good("+" + Mathf.RoundToInt(OverChargeOf(st) * 100f) + "% Over Charge") + "  (hold past full for a harder charged shot)");
             if (st.ExtraDashes > 0) lines.Add(CardText.Good("+" + Mathf.Clamp(st.ExtraDashes, 0, 9) + " Dash Charge" + (st.ExtraDashes > 1 ? "s" : string.Empty)) +
                 "  (" + (1 + Mathf.Clamp(st.ExtraDashes, 0, 9)) + " total)");
             if (!Same(st.DashCooldown, 1f))
@@ -321,6 +337,33 @@ namespace CP99Online.Rounds
         {
             var a = CardEffects.AppliedOf(__instance);
             if (a != null && CardGame.IsAuthority) __instance.totalSpeed *= a.SpeedFactor;
+        }
+    }
+
+    /// <summary>Over Charge: let the charge fill past the game's full charge (3) in BallHandling.Update.</summary>
+    [HarmonyPatch(typeof(BallHandling), "Update")]
+    internal static class OverChargeClampPatch
+    {
+        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> code)
+        {
+            var list = code.ToList();
+            var clamp = AccessTools.Method(typeof(Mathf), nameof(Mathf.Clamp), new[] { typeof(float), typeof(float), typeof(float) });
+            var max = AccessTools.Method(typeof(CardEffects), nameof(CardEffects.MaxCharge));
+            var hooked = 0;
+            for (var i = 1; i < list.Count - 1; i++)
+            {
+                if (list[i].opcode == OpCodes.Ldc_R4 && list[i].operand is float && Mathf.Approximately((float)list[i].operand, 3f) &&
+                    list[i - 1].opcode == OpCodes.Ldc_R4 && list[i - 1].operand is float && Mathf.Approximately((float)list[i - 1].operand, 0.5f) &&
+                    list[i + 1].Calls(clamp))
+                {
+                    var load = new CodeInstruction(OpCodes.Ldarg_0) { labels = list[i].labels, blocks = list[i].blocks };
+                    list[i] = new CodeInstruction(OpCodes.Call, max);
+                    list.Insert(i, load);
+                    hooked++;
+                }
+            }
+            Net.NetLog.Info("Over Charge: charge limit hooked x" + hooked);
+            return list;
         }
     }
 

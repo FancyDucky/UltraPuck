@@ -340,7 +340,7 @@ namespace CP99Online.Net
                 if (b.ballMesh.activeSelf) bf |= Proto.BMesh;
                 _msg.U8(bf);
                 var bh = b.GetComponent<BallHandling>();
-                _msg.U8((byte)Mathf.Clamp(bh.ballCharge / 3f * 255f, 0f, 255f));
+                _msg.U8((byte)Mathf.Clamp(bh.ballCharge / Proto.ChargeScale * 255f, 0f, 255f));
             }
             var pp = gm.puck.transform.position;
             _msg.F32(pp.x); _msg.F32(pp.y);

@@ -28,7 +28,8 @@ namespace CP99Online.Net
             public bool Disrespect;
         }
 
-        private const float InterpDelay = 0.1f;
+        /// <summary>Clients draw the world this far in the past (smooth movement between snapshots).</summary>
+        internal const float InterpDelay = 0.1f;
 
         public readonly List<LobbyEntry> Lobby = new List<LobbyEntry>();
         public string HostName { get; private set; }
@@ -531,7 +532,7 @@ namespace CP99Online.Net
                     ball.GetComponent<BallFire>().SetParticlesActive(mesh);
                 }
                 ball.carryObject = b.Carrier == i ? puckGo : null;
-                ball.GetComponent<BallHandling>().ballCharge = b.Charge[i] / 255f * 3f;
+                ball.GetComponent<BallHandling>().ballCharge = b.Charge[i] / 255f * Proto.ChargeScale;
             }
 
             var pt = puckGo.transform;

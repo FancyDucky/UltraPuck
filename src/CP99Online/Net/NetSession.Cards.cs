@@ -120,12 +120,14 @@ namespace CP99Online.Net
             BroadcastReliable();
         }
 
-        internal void HostSendShotEnd(ushort id)
+        /// <summary>Host: a shot ended (hit someone, a wall or timed out) at this point; clients fly it there, then remove it.</summary>
+        internal void HostSendShotEnd(ushort id, UnityEngine.Vector2 at)
         {
             if (_clients.Count == 0) return;
             Begin(Msg.CardShot);
             _msg.U8(1);
             _msg.U16(id);
+            _msg.F32(at.x); _msg.F32(at.y);
             BroadcastReliable();
         }
 
@@ -145,7 +147,7 @@ namespace CP99Online.Net
             var kind = r.U8();
             if (kind == 2) { int stunSlot = r.U8(); var secs = r.F32(); if (Match.Active) Stun.ClientStunned(stunSlot, secs); return; }
             var id = r.U16();
-            if (kind == 1) { CardObjects.EndShot(id); return; }
+            if (kind == 1) { var at = new UnityEngine.Vector2(r.F32(), r.F32()); CardObjects.ClientEndShot(id, at); return; }
             int team = r.U8();
             int slot = r.U8();
             var pos = new UnityEngine.Vector2(r.F32(), r.F32());
