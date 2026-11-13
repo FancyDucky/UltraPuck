@@ -210,6 +210,27 @@ namespace CP99Online.Net
             input.SwitchCount = r.U8();
         }
 
+        /// <summary>Custom arena: everyone gets the map (in order, ahead of StartMatch) and builds it while loading.</summary>
+        private void HostSendMap(string text)
+        {
+            const int chunk = 1000;
+            var bytes = System.Text.Encoding.UTF8.GetBytes(text);
+            var hash = Maps.MapData.Hash(text);
+            var count = Math.Max(1, (bytes.Length + chunk - 1) / chunk);
+            for (var i = 0; i < count; i++)
+            {
+                var len = Math.Min(chunk, bytes.Length - i * chunk);
+                Begin(Msg.MapData);
+                _msg.U32(hash);
+                _msg.U16((ushort)i);
+                _msg.U16((ushort)count);
+                _msg.U16((ushort)len);
+                _msg.Bytes(bytes, i * chunk, len);
+                BroadcastReliable();
+            }
+            NetLog.Info("Sent the custom map (" + bytes.Length + " bytes, " + count + " part(s))");
+        }
+
         /// <summary>Bot switching: tell everyone who controls which ball.</summary>
         internal void HostSendPossession()
         {
@@ -386,11 +407,17 @@ namespace CP99Online.Net
                 NetLog.Info("Challenges are single-player; online players were not added");
                 return;
             }
+            string mapText = null;
             if (ArenaManager.arenaName == "0000_Custom")
             {
-                Status = "Custom arenas aren't supported online yet - pick a built-in arena";
-                NetLog.Warn(Status);
-                return;
+                var map = Maps.MapLibrary.MapFor(ArenaCreatorManager.currentArena);
+                if (map == null)
+                {
+                    Status = "Couldn't read this custom arena - pick another one";
+                    NetLog.Warn(Status);
+                    return;
+                }
+                mapText = map.Write();
             }
 
             // Online players come from the shared player selection: boxes owned by clients carry
@@ -426,6 +453,7 @@ namespace CP99Online.Net
                 NetInput.BySlot[s] = ci.Input;
             }
 
+            if (mapText != null) HostSendMap(mapText);
             Begin(Msg.StartMatch);
             _msg.U8(Match.Id);
             _msg.Str(ArenaManager.arenaName);

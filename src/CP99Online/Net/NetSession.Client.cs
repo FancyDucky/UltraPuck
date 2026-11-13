@@ -179,6 +179,9 @@ namespace CP99Online.Net
                         if (Match.Active) Possession.ClientApply(state);
                     }
                     break;
+                case Msg.MapData:
+                    ClientHandleMap(r);
+                    break;
                 case Msg.Nav:
                     _navMenu = r.Str();
                     _navElement = r.Str();
@@ -249,6 +252,11 @@ namespace CP99Online.Net
             }
 
             ArenaManager.arenaName = arena;
+            if (arena == "0000_Custom")
+            {
+                if (Maps.MapLibrary.Incoming != null) ArenaCreatorManager.currentArena = Maps.MapLibrary.StandIn(Maps.MapLibrary.Incoming, 9999);
+                else NetLog.Warn("The host picked a custom arena but its map didn't arrive");
+            }
             ArenaManager.noSpikes = noSpikes;
             GameModeManager.gameMode = (GameModeManager.GameMode)mode;
             NumGoalsToWinManager.numGoalsToWin = goals;
@@ -285,6 +293,33 @@ namespace CP99Online.Net
             Status = "Loading " + arena + "...";
             NetLog.Info("Host started match " + id + " on " + arena + " (" + n + " players, my slot " + local + ")");
             Application.LoadLevel("Arena3D");
+        }
+
+        private byte[][] _mapParts;
+        private uint _mapHash;
+
+        /// <summary>A piece of the host's custom map; once all are in, it becomes the map for the next match.</summary>
+        private void ClientHandleMap(Reader r)
+        {
+            var hash = r.U32();
+            int index = r.U16(), count = r.U16(), len = r.U16();
+            var data = r.Raw(len);
+            if (_mapParts == null || _mapHash != hash || _mapParts.Length != count) { _mapParts = new byte[count][]; _mapHash = hash; }
+            if (index < count) _mapParts[index] = data;
+            if (_mapParts.Any(p => p == null)) return;
+            var all = _mapParts.SelectMany(p => p).ToArray();
+            _mapParts = null;
+            var text = System.Text.Encoding.UTF8.GetString(all);
+            if (Maps.MapData.Hash(text) != hash) { NetLog.Warn("The host's map arrived damaged"); return; }
+            try
+            {
+                var map = Maps.MapData.Parse(text);
+                Maps.MapLibrary.Incoming = map;
+                string saved = null;
+                try { saved = Maps.MapLibrary.Save(map, Maps.MapLibrary.DownloadFolder); } catch (Exception e) { NetLog.Warn("Couldn't save the host's map: " + e.Message); }
+                NetLog.Info("Got the host's map \"" + map.Name + "\" (" + all.Length + " bytes)" + (saved != null ? ", saved to " + saved : string.Empty));
+            }
+            catch (FormatException e) { NetLog.Warn("Can't read the host's map: " + e.Message); }
         }
 
         /// <summary>GameManager.SpawnPlayers postfix (client): makes every ball a display-only puppet.</summary>

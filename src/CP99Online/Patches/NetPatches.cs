@@ -14,6 +14,7 @@ namespace CP99Online.Patches
     {
         private static void Prefix()
         {
+            TestHarness.ApplyTestMap();
             if (NetSession.IsHost) NetSession.Instance.HostOnNewGame();
         }
     }

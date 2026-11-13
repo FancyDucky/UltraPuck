@@ -15,6 +15,11 @@ $plugin = Join-Path $root 'src\CP99Online\bin\Release\CP99Online.dll'
 $version = [regex]::Match((Get-Content -LiteralPath (Join-Path $root 'src\CP99Online\Plugin.cs') -Raw), 'Version\s*=\s*"([^"]+)"').Groups[1].Value
 if (-not $version) { throw 'Version not found in Plugin.cs' }
 
+# The map maker (Windows only), built fresh.
+$mapMakerDir = Join-Path $root 'src\MapMaker\bin\Release'
+& dotnet build (Join-Path $root 'src\MapMaker\MapMaker.csproj') -c Release --nologo -v q | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Map maker build failed' }
+
 $name  = "UltraPuck-$version"
 $stage = Join-Path $dist "build\$name"
 if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
@@ -28,7 +33,7 @@ function Write-Text($from, $to, [switch]$Unix) {
 }
 
 # One OS folder: launchers at the top, setup script in installer\, payload in files\.
-function New-OsFolder($folder, $srcDir, [string[]]$launchers, $setup, $payload, [switch]$Unix) {
+function New-OsFolder($folder, $srcDir, [string[]]$launchers, $setup, $payload, [switch]$Unix, [switch]$MapMaker) {
     $dir = Join-Path $stage $folder
     New-Item -ItemType Directory -Force -Path "$dir\installer" | Out-Null
     foreach ($f in $launchers) { Write-Text (Join-Path $src "$srcDir\$f") (Join-Path $dir $f) -Unix:$Unix }
@@ -40,9 +45,18 @@ function New-OsFolder($folder, $srcDir, [string[]]$launchers, $setup, $payload, 
     New-Item -ItemType Directory -Force -Path "$dir\files\BepInEx\config", "$dir\files\BepInEx\plugins\CP99Online" | Out-Null
     Copy-Item -LiteralPath (Join-Path $dist 'payload\BepInEx\config\BepInEx.cfg') -Destination "$dir\files\BepInEx\config\" -Force
     Copy-Item -LiteralPath $plugin -Destination "$dir\files\BepInEx\plugins\CP99Online\CP99Online.dll" -Force
+    # Example maps for the arena list ("UltraPuck Maps" in the game folder)
+    New-Item -ItemType Directory -Force -Path "$dir\files\UltraPuck Maps" | Out-Null
+    Copy-Item -Path (Join-Path $root 'maps\*.upmap') -Destination "$dir\files\UltraPuck Maps\"
+    if ($MapMaker) {
+        New-Item -ItemType Directory -Force -Path "$dir\files\UltraPuck Map Maker" | Out-Null
+        foreach ($f in @('UltraPuck Map Maker.exe', 'UltraPuck Map Maker.exe.config')) {
+            Copy-Item -LiteralPath (Join-Path $mapMakerDir $f) -Destination "$dir\files\UltraPuck Map Maker\"
+        }
+    }
 }
 
-New-OsFolder 'Windows' 'Windows' @('Install UltraPuck.bat', 'Uninstall UltraPuck.bat') 'cp99-setup.ps1' 'payload'
+New-OsFolder 'Windows' 'Windows' @('Install UltraPuck.bat', 'Uninstall UltraPuck.bat') 'cp99-setup.ps1' 'payload' -MapMaker
 New-OsFolder 'Linux and Steam Deck' 'Linux' @('install-linux.sh', 'uninstall-linux.sh') 'cp99-setup.sh' 'payload' -Unix
 New-OsFolder 'Mac' 'Mac' @('install-mac.sh', 'uninstall-mac.sh') 'cp99-setup-mac.sh' 'payload-mac' -Unix
 Write-Text (Join-Path $src 'README.txt') (Join-Path $stage 'README.txt')

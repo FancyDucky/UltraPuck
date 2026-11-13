@@ -64,6 +64,18 @@ MODS
   then restart the game. Online, the host's gameplay mods apply.
   F8 (or hold View/Back on a controller) opens an overlay with the same options, plus direct IP.
 
+CUSTOM MAPS
+  Maps in the "UltraPuck Maps" folder in the game folder show up in the arena list under Custom
+  (Curve Rink comes as an example). Online, everyone gets the host's map automatically when the
+  match loads, and bots can play on custom maps.
+  Make your own with UltraPuck Map Maker (Windows): it's installed in the game folder, in
+  "UltraPuck Map Maker". Draw floors, walls and holes as rectangles (square or rounded), circles,
+  curved arcs or polygons, resize them with handles, place goals, spawns, boosts, bumpers and
+  spikes, mirror halves, and save. Press Test in game (F5) to play it right away: it starts
+  the game, or loads the map in the game that's already open. Help > How to use explains it.
+  Maps made in the game's own Arena Creator still work, online too, and the map maker can open
+  them (File > Open an Arena Creator map).
+
 UNINSTALL
   Use the uninstaller in your system's folder (see above). It removes the mod and puts back
   any files it replaced. The Mods folder (mods you added) is left alone.
@@ -76,6 +88,5 @@ NOTES
   - Some antivirus tools flag winhttp.dll. It is BepInEx's mod loader (BepInEx 5.4.23.5, 32-bit),
     the standard loader for Unity game mods.
   - Windows Firewall may ask for network access the first time you host. Allow it.
-  - Custom arenas don't work online yet.
   - Manual install: copy everything inside your system folder's "files" folder into the game
     folder (Steam > right-click ClusterPuck 99 > Manage > Browse local files).

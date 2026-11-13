@@ -1,0 +1,26 @@
+UltraPuck map 1
+name Curve Rink
+tagline Round walls, two holes and a centre circle
+background 1
+players 2 6
+difficulty 2
+floor 0 rect -14 -8 14 8 3
+floor 8 circle 0 0 2.5
+wall 9 arc -11 0 3 95 265 1
+wall 9 arc 11 0 3 -85 85 1
+hole circle 0 5.5 1.2
+hole circle 0 -5.5 1.2
+wall 4 circle -5.5 0 0.8
+wall 4 circle 5.5 0 0.8
+goal 1 -11.5 0
+goal 2 11.5 0
+spawn 1 -7 2.5
+spawn 1 -7 -2.5
+spawn 1 -8.5 0
+spawn 2 7 2.5
+spawn 2 7 -2.5
+spawn 2 8.5 0
+boost -3 3
+boost 3 -3
+bumper 3 3
+bumper -3 -3

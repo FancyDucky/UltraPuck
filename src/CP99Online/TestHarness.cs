@@ -41,6 +41,7 @@ namespace CP99Online
 
         private void Update()
         {
+            if (PuckProbe.Enabled && GetComponent<PuckProbe>() == null) gameObject.AddComponent<PuckProbe>();
             var s = NetSession.Instance;
             if (s == null) return;
             var t = Time.realtimeSinceStartup;
@@ -203,7 +204,8 @@ namespace CP99Online
                     NumGoalsToWinManager.numGoalsToWin = 3;
                     GameTimerManager.gameLength = 60f;
                     var nav = MenuGlobals.menuManager.menuNavigator;
-                    nav.MoveDownList(); nav.MoveDownList();
+                    if (Environment.GetEnvironmentVariable("CP99_TEST_PICKLAST") == "1") nav.MoveUpList(); // wraps to the last (custom) arena
+                    else { nav.MoveDownList(); nav.MoveDownList(); }
                     Next(t, "host highlights arena 3 (" + NavText() + "), goals 3, 1:00");
                 }
                 else if (_step >= 6 && _step < 25 && scene == "GameSelection" && t - _stepAt > 4f)
@@ -288,6 +290,74 @@ namespace CP99Online
             box.playerAccount = new Account(name, false, symbol);
             box.ChangeStateTo(PlayerBox_V2.PlayerBoxState.SIGNEDIN);
             box.ChangeTeamsTo(team);
+        }
+
+        private static readonly string TestMap = Environment.GetEnvironmentVariable("CP99_TEST_MAP");
+        private static CustomArena _testArena;
+
+        /// <summary>GameManager.NewGame (host / offline): CP99_TEST_MAP swaps the arena for a custom map,
+        /// a .upmap path or "tiles:n" for the n-th Arena Creator map in the save.</summary>
+        internal static void ApplyTestMap()
+        {
+            if (string.IsNullOrEmpty(TestMap) || NetSession.ClientInMatch || Match.ClientPending) return;
+            try
+            {
+                if (_testArena == null)
+                {
+                    if (TestMap == "tiles:demo") _testArena = DemoTiles();
+                    else if (TestMap.StartsWith("tiles:"))
+                    {
+                        var sl = UnityEngine.Object.FindObjectOfType<ArenaCreatorSaveLoad>() ?? new GameObject("TestSaveLoad").AddComponent<ArenaCreatorSaveLoad>();
+                        _testArena = sl.LoadArena(int.Parse(TestMap.Substring(6)));
+                    }
+                    else _testArena = Maps.MapLibrary.StandIn(Maps.MapLibrary.Load(TestMap), 9999);
+                }
+                ArenaCreatorManager.currentArena = _testArena;
+                ArenaCreatorManager.comingFromArenaCreator = false;
+                ArenaManager.arenaName = "0000_Custom";
+                NetLog.Info("TEST map: " + _testArena.arenaName);
+            }
+            catch (Exception e) { NetLog.Warn("TEST map failed: " + e); }
+        }
+
+        /// <summary>CP99_TEST_ORIGINAL=1: old tile maps use the game's own builder (to compare with ours).</summary>
+        internal static readonly bool OriginalTiles = Environment.GetEnvironmentVariable("CP99_TEST_ORIGINAL") == "1";
+
+        /// <summary>An Arena Creator map using every tile type, for testing the conversion.</summary>
+        private static CustomArena DemoTiles()
+        {
+            const int n = 26;
+            var a = new CustomArena(n, 9998) { arenaName = "Tile Demo", gradient = 2 };
+            for (var x = 0; x < n; x++)
+                for (var y = 0; y < n; y++)
+                {
+                    var inside = x >= 3 && x <= 22 && y >= 6 && y <= 19;
+                    var color = (ArenaTile.TileColor)(((x / 5) + (y / 5)) % 3 == 0 ? 0 : ((x / 5) + (y / 5)) % 3 == 1 ? 1 : 8);
+                    a.tileArray[x, y] = new ArenaTile(inside ? ArenaTile.TileType.GROUND : ArenaTile.TileType.EMPTY, color, 0, ArenaTile.Direction.RIGHT);
+                }
+            void set(int x, int y, ArenaTile.TileType t, ArenaTile.TileColor c, ArenaTile.Direction d) { a.tileArray[x, y] = new ArenaTile(t, c, 0, d); }
+            for (var x = 4; x <= 21; x++) { set(x, 19, ArenaTile.TileType.WALL, ArenaTile.TileColor.BLUE, ArenaTile.Direction.RIGHT); set(x, 6, ArenaTile.TileType.WALL, ArenaTile.TileColor.BLUE, ArenaTile.Direction.RIGHT); }
+            // corners: one of each diagonal kind
+            set(3, 19, ArenaTile.TileType.ANGLEWALL, ArenaTile.TileColor.RED, ArenaTile.Direction.LEFT);
+            set(22, 19, ArenaTile.TileType.ANGLEWALL, ArenaTile.TileColor.RED, ArenaTile.Direction.UP);
+            set(22, 6, ArenaTile.TileType.ANGLEGROUND, ArenaTile.TileColor.YELLOW, ArenaTile.Direction.RIGHT);
+            set(3, 6, ArenaTile.TileType.ANGLEGROUND, ArenaTile.TileColor.YELLOW, ArenaTile.Direction.DOWN);
+            // a diamond of diagonal walls on ground in the middle
+            set(12, 14, ArenaTile.TileType.ANGLEWALLANDGROUND, ArenaTile.TileColor.PURPLE, ArenaTile.Direction.RIGHT);
+            set(13, 14, ArenaTile.TileType.ANGLEWALLANDGROUND, ArenaTile.TileColor.PURPLE, ArenaTile.Direction.UP);
+            set(13, 15, ArenaTile.TileType.ANGLEWALLANDGROUND, ArenaTile.TileColor.PURPLE, ArenaTile.Direction.LEFT);
+            set(12, 15, ArenaTile.TileType.ANGLEWALLANDGROUND, ArenaTile.TileColor.PURPLE, ArenaTile.Direction.DOWN);
+            // holes and a wall block
+            set(12, 9, ArenaTile.TileType.EMPTY, 0, ArenaTile.Direction.RIGHT); set(13, 9, ArenaTile.TileType.EMPTY, 0, ArenaTile.Direction.RIGHT);
+            set(8, 15, ArenaTile.TileType.WALL, ArenaTile.TileColor.GREEN, ArenaTile.Direction.RIGHT); set(8, 16, ArenaTile.TileType.WALL, ArenaTile.TileColor.GREEN, ArenaTile.Direction.RIGHT);
+            set(5, 12, ArenaTile.TileType.GOAL1, ArenaTile.TileColor.WHITE, ArenaTile.Direction.RIGHT);
+            set(20, 12, ArenaTile.TileType.GOAL2, ArenaTile.TileColor.WHITE, ArenaTile.Direction.RIGHT);
+            set(8, 11, ArenaTile.TileType.SPAWN1, ArenaTile.TileColor.WHITE, ArenaTile.Direction.RIGHT);
+            set(17, 11, ArenaTile.TileType.SPAWN2, ArenaTile.TileColor.WHITE, ArenaTile.Direction.RIGHT);
+            set(10, 17, ArenaTile.TileType.BUMPER, ArenaTile.TileColor.WHITE, ArenaTile.Direction.RIGHT);
+            set(16, 9, ArenaTile.TileType.SPEEDBOOST, ArenaTile.TileColor.WHITE, ArenaTile.Direction.RIGHT);
+            set(16, 17, ArenaTile.TileType.SPIKE, ArenaTile.TileColor.WHITE, ArenaTile.Direction.RIGHT);
+            return a;
         }
 
         private static void SetupTestArena()
@@ -534,6 +604,49 @@ namespace CP99Online
             NetLog.Info("MENUTEST " + name + " menu=" + (nav.selectedMenu ? nav.selectedMenu.name : "-") +
                 " sel=" + (nav.selectedElement ? nav.selectedElement.GetComponent<TextMesh>().text : "-"));
             Application.CaptureScreenshot(System.IO.Path.Combine(dir, name + ".png"));
+        }
+    }
+
+    /// <summary>
+    /// CP99_TEST_PUCKPROBE=1 (host): on a custom map, fires the puck from the centre at full speed in 16 directions,
+    /// one every 2 s, and logs whether it ever left the floor (through the forcefield) or got inside a wall.
+    /// </summary>
+    internal sealed class PuckProbe : MonoBehaviour
+    {
+        internal static readonly bool Enabled = Environment.GetEnvironmentVariable("CP99_TEST_PUCKPROBE") == "1";
+        private int _shot = -1;
+        private float _next;
+        private float _maxOut, _maxIn;
+        private int _bounces;
+        private Vector2 _lastV;
+
+        private void FixedUpdate()
+        {
+            var gm = Globals.gameManager;
+            var geo = Maps.MapBuilder.Current;
+            if (gm == null || gm.puck == null || geo == null || NetSession.ClientInMatch || gm.startCountdown > 0f) return;
+            if (ArenaManager.arenaName != "0000_Custom") return;
+            var rb = gm.puck.GetComponent<Rigidbody2D>();
+            var p = (Vector2)gm.puck.transform.position;
+            if (_shot >= 0)
+            {
+                _maxOut = Mathf.Max(_maxOut, geo.FloorDistance(p.x, p.y));
+                _maxIn = Mathf.Min(_maxIn, geo.WallDistance(p.x, p.y));
+                if (Vector2.Dot(rb.velocity, _lastV) < 0f) _bounces++;
+                _lastV = rb.velocity;
+            }
+            if (Time.time < _next) return;
+            if (_shot >= 0)
+                NetLog.Info("PROBE shot " + _shot + " angle " + (_shot * 22.5f) + ": furthest past floor edge " + _maxOut.ToString("0.00")
+                    + ", deepest in a wall " + (-_maxIn).ToString("0.00") + ", bounces " + _bounces + ", ends at " + p
+                    + (_maxOut > 0.6f || _maxIn < -0.25f ? "  <-- ESCAPED" : string.Empty));
+            _shot++;
+            if (_shot >= 16) { enabled = false; NetLog.Info("PROBE done"); return; }
+            var a = _shot * 22.5f * Mathf.Deg2Rad;
+            var v = new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * 90f;
+            gm.puck.GetComponent<Puck>().ResetPuck(new Vector3(0f, 0f, gm.puck.transform.position.z), v);
+            _maxOut = -99f; _maxIn = 99f; _bounces = 0; _lastV = v;
+            _next = Time.time + 2f;
         }
     }
 }

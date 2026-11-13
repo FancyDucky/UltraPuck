@@ -80,6 +80,16 @@ namespace CP99Online.Net
         public bool Bool() { return U8() != 0; }
         public ushort U16() { Need(2); var v = (ushort)(_buf[_pos] | (_buf[_pos + 1] << 8)); _pos += 2; return v; }
         public short I16() { return (short)U16(); }
+
+        public byte[] Raw(int n)
+        {
+            Need(n);
+            var b = new byte[n];
+            System.Buffer.BlockCopy(_buf, _pos, b, 0, n);
+            _pos += n;
+            return b;
+        }
+
         public uint U32() { Need(4); uint v = 0; for (var i = 0; i < 4; i++) v |= (uint)_buf[_pos + i] << (8 * i); _pos += 4; return v; }
         public int I32() { return (int)U32(); }
         public float F32() { Need(4); var v = BitConverter.ToSingle(_buf, _pos); _pos += 4; return v; }
