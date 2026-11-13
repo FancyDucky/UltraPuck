@@ -420,8 +420,18 @@ namespace CP99Online
         private static readonly bool SwitchTest = Environment.GetEnvironmentVariable("CP99_TEST_SWITCH") == "1";
         private float _nextSwitch;
 
+        internal static readonly bool BrakeTest = Environment.GetEnvironmentVariable("CP99_TEST_BRAKE") == "1";
+        private static readonly bool CardMenuTest = Environment.GetEnvironmentVariable("CP99_TEST_CARDMENU") == "1";
+        private bool _cardMenuShown;
+
         private void SwitchStep()
         {
+            if (CardMenuTest && _role == "host" && Match.Active && !_cardMenuShown && Globals.gameManager != null && Globals.gameManager.startCountdown <= 0f)
+            {
+                _cardMenuShown = true;
+                ModMenu.Show(2);
+                NetLog.Info("TEST card menu opened");
+            }
             if (!SwitchTest || !Match.Active || Rounds.CardGame.PhaseActive) return;
             var gm = Globals.gameManager;
             if (gm == null || gm.startCountdown > 0f || Time.realtimeSinceStartup < _nextSwitch) return;

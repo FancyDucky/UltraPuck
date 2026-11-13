@@ -410,6 +410,7 @@ namespace CP99Online.Net
                 move = new Vector2(Mathf.Cos(Now * 0.8f), Mathf.Sin(Now * 0.8f));
                 aim = move;
                 held = 0;
+                if (TestHarness.BrakeTest && Mathf.Repeat(Now, 8f) < 0.4f) held |= Proto.HSprint; // brake now and then
             }
             Begin(Msg.Input);
             _msg.U32(++_inputSeq);

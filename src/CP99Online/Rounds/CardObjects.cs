@@ -14,6 +14,7 @@ namespace CP99Online.Rounds
             _pylons.Clear();
             _pylonSig = null;
             Stun.Clear();
+            Invisibility.Clear();
             foreach (var s in _shots.Values) if (s != null) Object.Destroy(s.gameObject);
             _shots.Clear();
         }

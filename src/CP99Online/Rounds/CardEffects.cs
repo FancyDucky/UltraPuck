@@ -331,6 +331,7 @@ namespace CP99Online.Rounds
             if (st.OpponentSpeed < 0.999f) lines.Add(CardText.Stat(st.OpponentSpeed, "Opponent Move Speed", false));
             if (pylons > 0) lines.Add(CardText.Good("+" + Mathf.Min(pylons, 4) + " Pylon Goalie" + (pylons > 1 ? "s" : string.Empty)) + "  (your team's net)");
             if (st.PuckGun) lines.Add("Puck Gun: every dash fires a " + CardText.Good("1 s Stun") + " shot");
+            if (st.Invisibility) lines.Add("Invisibility: brake to turn " + CardText.Good("invisible for 5 s") + "  (12 s cooldown)");
             if (!Same(st.FriendlyFire, 1f)) lines.Add(CardText.Stat(FriendlyFireOf(st), "Teammate Knockback", true) + "  (dashes and Puck Gun)");
             if (lines.Count == 0) lines.Add("No changes from cards.");
             return lines;

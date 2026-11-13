@@ -27,7 +27,7 @@ namespace CP99Online.Net
         Nav,            // h->c  str menu path, str element path, i32 goals, f32 game length (GameSelection)
         CardState,      // h->c  Rounds Mode: phase, offers, picks/votes and everyone's cards (see NetSession.Cards)
         CardPick,       // c->h  u8 seat, u8 offer index
-        CardShot,       // h->c  Puck Gun: u8 kind (0 fired: u16 id, u8 team, u8 slot, f32 x, y, vx, vy / 1 ended: u16 id / 2 stunned: u8 slot, f32 seconds)
+        CardShot,       // h->c  Puck Gun: u8 kind (0 fired: u16 id, u8 team, u8 slot, f32 x, y, vx, vy / 1 ended: u16 id / 2 stunned: u8 slot, f32 seconds / 3 invisible: u8 slot, f32 seconds)
         Pylons,         // h->c  unreliable: u8 n, n x {f32 x, f32 y} Pylon Goalie positions
         Possess,        // h->c  bot switching: u8 n, n x {u8 home slot, u8 controlled slot}
     }
@@ -47,7 +47,7 @@ namespace CP99Online.Net
 
     internal static class Proto
     {
-        public const ushort Version = 8;
+        public const ushort Version = 9;
         /// <summary>Snapshot charge byte: 255 = this charge. Over Charge goes up to 3 x (1 + 2) = 9.</summary>
         public const float ChargeScale = 9f;
         public const int MaxClients = 7;

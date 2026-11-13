@@ -8,7 +8,7 @@ namespace CP99Online
     internal class ModMenu : MonoBehaviour
     {
         private const int WindowId = 0x43503939;
-        private static readonly string[] Tabs = { "Mods", "Online" };
+        private static readonly string[] Tabs = { "Mods", "Online", "Cards" };
 
         private static ModMenu _instance;
         internal static bool IsOpen { get { return _instance != null && _instance._open; } }
@@ -108,12 +108,77 @@ namespace CP99Online
         {
             _tab = GUILayout.Toolbar(_tab, Tabs);
             GUILayout.Space(6f);
-            if (_tab == 0) DrawMods(); else DrawOnline();
+            if (_tab == 0) DrawMods(); else if (_tab == 1) DrawOnline(); else DrawCards();
 
             GUILayout.Space(8f);
             if (GUILayout.Button("Close (" + Plugin.MenuKey.Value + " or hold View/Back)")) SetOpen(false);
             if (Plugin.IsSteamDeck) GUILayout.Label("Steam Deck: tap the screen to use this menu. STEAM + X opens the keyboard.", _dim);
             GUI.DragWindow();
+        }
+
+        // ------------------------------------------------------------------ Cards tab (debug)
+
+        private int _cardSeat = -1;
+        private Vector2 _cardScroll;
+
+        /// <summary>Give or take away cards during a match, for testing. Host / offline only.</summary>
+        private void DrawCards()
+        {
+            GUILayout.Label("Card debug", _header);
+            var seats = Rounds.CardGame.Seats;
+            var gm = Globals.gameManager;
+            if (gm == null || gm.teams == null || Application.loadedLevelName != "Arena3D")
+            {
+                GUILayout.Label("Start a match, then give or remove cards here.", _dim);
+                return;
+            }
+            if (!Rounds.CardGame.IsAuthority) { GUILayout.Label("Only the host can change cards.", _dim); return; }
+            Rounds.CardGame.EnsureSeats(gm);
+            if (seats.Count == 0) { GUILayout.Label("No players yet.", _dim); return; }
+            if (_cardSeat < 0 || _cardSeat >= seats.Count)
+            {
+                _cardSeat = seats.FindIndex(Rounds.CardGame.IsLocal);
+                if (_cardSeat < 0) _cardSeat = 0;
+            }
+
+            GUILayout.BeginHorizontal();
+            for (var i = 0; i < seats.Count; i++)
+                if (GUILayout.Toggle(_cardSeat == i, seats[i].Name, GUI.skin.button) && _cardSeat != i) _cardSeat = i;
+            GUILayout.EndHorizontal();
+            var seat = seats[_cardSeat];
+            GUILayout.Label(seat.Cards.Count == 0 ? "No cards." : string.Join(", ", seat.Cards.Select(id => { var c = UltraPuck.Cards.Get(id); return c != null ? c.Name : id; }).ToArray()), _dim);
+
+            _cardScroll = GUILayout.BeginScrollView(_cardScroll, GUILayout.Height(300f));
+            foreach (var card in UltraPuck.Cards.All)
+            {
+                var n = seat.Cards.Count(id => id == card.Id);
+                GUILayout.BeginHorizontal();
+                GUILayout.Label(card.Name, GUILayout.Width(170f));
+                GUILayout.Label("x" + n, GUILayout.Width(36f));
+                if (GUILayout.Button("+", GUILayout.Width(36f))) ChangeCard(seat, card.Id, true);
+                GUI.enabled = n > 0;
+                if (GUILayout.Button("-", GUILayout.Width(36f))) ChangeCard(seat, card.Id, false);
+                GUI.enabled = true;
+                GUILayout.EndHorizontal();
+            }
+            GUILayout.EndScrollView();
+            GUI.enabled = seat.Cards.Count > 0;
+            if (GUILayout.Button("Remove all of " + seat.Name + "'s cards")) { seat.Cards.Clear(); CardsChanged(seat.Name + ": removed all cards"); }
+            GUI.enabled = true;
+            GUILayout.Label("Ignores the per-player card limits. Changes apply right away and online players see them.", _dim);
+        }
+
+        private static void ChangeCard(Rounds.Seat seat, string id, bool add)
+        {
+            if (add) seat.Cards.Add(id); else seat.Cards.Remove(id);
+            CardsChanged(seat.Name + (add ? ": +" : ": -") + id);
+        }
+
+        private static void CardsChanged(string what)
+        {
+            Rounds.CardEffects.RecomputeAll(true);
+            Rounds.CardGame.Version++;
+            NetLog.Info("Card debug: " + what);
         }
 
         // ------------------------------------------------------------------ Mods tab

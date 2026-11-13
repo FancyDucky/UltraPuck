@@ -62,7 +62,7 @@ namespace CP99Online
         internal static void Clear()
         {
             _body.Clear(); _controller.Clear(); _homeNames.Clear(); _botNames.Clear(); _lastSwitch.Clear();
-            _anyBotNames = null; _touched = false;
+            _anyBotNames = null; _touched = false; _lastCarrier = null;
         }
 
         private void OnLevelWasLoaded(int level) { Clear(); }
@@ -119,6 +119,36 @@ namespace CP99Online
             if (NetSession.HostInMatch)
                 foreach (var kv in NetInput.BySlot.ToList())
                     if (kv.Value != null && kv.Value.SwitchDown()) Request(Match.Ball(kv.Key));
+
+            AutoSwitch(gm);
+        }
+
+        private static BallData _lastCarrier;
+
+        /// <summary>
+        /// A bot on a team with humans just got the puck: one of those humans takes it over (the player whose own
+        /// ball it is, if a human is away from theirs; otherwise a random human on that team).
+        /// </summary>
+        private static readonly bool NoAutoTest = System.Environment.GetEnvironmentVariable("CP99_TEST_NOAUTO") == "1"; // tests with an idle host player
+
+        private static void AutoSwitch(GameManager gm)
+        {
+            if (NoAutoTest) return;
+            var p = gm.puck.GetComponent<Puck>();
+            var carrier = p != null && p.carryer != null ? p.carryer.GetComponent<BallData>() : null;
+            if (carrier == _lastCarrier) return;
+            _lastCarrier = carrier;
+            if (carrier == null || ControllerOf(carrier) != null || Rounds.CardGame.PhaseActive || carrier.team == null) return;
+            var humans = carrier.team.members.Where(m => m != null && m.playerData != null && !m.playerData.AI).ToList();
+            if (humans.Count == 0) return;
+            if (NetSession.HostInMatch) humans.RemoveAll(h => Match.IsRemote(Match.Slot(h)) && !NetInput.BySlot.ContainsKey(Match.Slot(h))); // left the game
+            var home = humans.Contains(carrier) ? carrier : (humans.Count > 0 ? humans[Random.Range(0, humans.Count)] : null);
+            if (home == null) return;
+            _lastSwitch[home] = Time.time;
+            Move(home, carrier);
+            NetLog.Info(home == carrier ? "Switch: " + Name(home) + "'s own player got the puck while the AI played it; they take it back"
+                : "Switch: bot " + Name(carrier) + " got the puck; " + Name(home) + " takes over");
+            if (NetSession.HostInMatch) NetSession.Instance.HostSendPossession();
         }
 
         /// <summary>X on this player's controller (X_P1.. / X_ALL), or E on the keyboard.</summary>

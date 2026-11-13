@@ -135,6 +135,9 @@ namespace CP99Online.Rounds
             return true;
         }
 
+        /// <summary>Card debug menu: make sure there are seats before the first card pick.</summary>
+        internal static void EnsureSeats(GameManager gm) { if (IsAuthority) BuildSeats(gm); }
+
         private static void BuildSeats(GameManager gm)
         {
             var balls = new List<BallData>();

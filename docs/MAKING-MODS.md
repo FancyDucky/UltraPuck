@@ -146,7 +146,7 @@ public class MyMod : UltraMod
 - `Weight`: heavier means you take less knockback and your dash checks give more. Movement and dash speed are corrected for it.
 - `OpponentSpeed`, which slows every opponent.
 
-It also has `OverCharge` (0.5 = the charge can fill 50% past full, for a 50% harder shot; up to 2), `ExtraDashes`, `SpawnCloser` (0.2 = 20% closer to the puck at each face-off), `Pylons`, `PuckGun` and `FriendlyFire` (how hard you push teammates; 3.5 = +250%).
+It also has `OverCharge` (0.5 = the charge can fill 50% past full, for a 50% harder shot; up to 2), `ExtraDashes`, `SpawnCloser` (0.2 = 20% closer to the puck at each face-off), `Pylons`, `PuckGun` and `FriendlyFire` (how hard you push teammates; 2.5 = +150%).
 For anything else, override `ApplyToBall(BallData ball, int copies)`. It runs on the player's ball when they
 get the card and after every field reset.
 
@@ -162,7 +162,7 @@ tooltip (hover a name in the corner list) uses the same terms:
 | Move Speed | How fast you move | + |
 | Knockback Taken | How far hits (dashes, checks, Puck Gun) push you. It's 1 / `CardStats.Weight`, so Weight 2 = −50% | − |
 | Knockback Given | How far your dash checks push others. It's `CardStats.Weight`, so Weight 2 = +100% | + |
-| Teammate Knockback | How far your dash checks and Puck Gun shots push teammates (`CardStats.FriendlyFire`, 3.5 = +250%), on top of Knockback Given | + |
+| Teammate Knockback | How far your dash checks and Puck Gun shots push teammates (`CardStats.FriendlyFire`, 2.5 = +150%), on top of Knockback Given | + |
 | Size | Ball size | neutral |
 | Shot Power | How hard your quick and charged shots hit the puck (also raises the puck's speed limit) | + |
 | Charge-up Time | Time to reach a full charge shot. It's 1 / `CardStats.ChargeSpeed`, so ChargeSpeed 2 = −50% | − |

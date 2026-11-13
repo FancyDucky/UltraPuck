@@ -39,8 +39,10 @@ namespace UltraPuck
         /// <summary>Every dash fires a shot that stuns the first player it hits (teammates too) for 1 s and knocks them back,
         /// or knocks the puck away.</summary>
         public bool PuckGun;
-        /// <summary>How hard your dash checks and Puck Gun shots push teammates (3.5 = +250%).</summary>
+        /// <summary>How hard your dash checks and Puck Gun shots push teammates (2.5 = +150%).</summary>
         public float FriendlyFire = 1f;
+        /// <summary>Braking turns you invisible to the other team for 5 s (12 s cooldown).</summary>
+        public bool Invisibility;
     }
 
     /// <summary>
@@ -87,7 +89,7 @@ namespace UltraPuck
             new QuickRechargeCard(), new HeavyweightCard(), new FeatherweightCard(),
             new OverChargeCard(), new SlowPokeCard(), new HeadStartCard(),
             new PylonGoalieCard(), new PuckMagnetCard(), new PuckGunCard(),
-            new FriendlyFireCard(),
+            new FriendlyFireCard(), new InvisibilityCard(),
         };
 
         /// <summary>Every registered card, built-in ones first.</summary>
@@ -260,13 +262,23 @@ namespace UltraPuck
         public override void Apply(CardStats s) { s.PuckGun = true; }
     }
 
+    internal sealed class InvisibilityCard : UltraCard
+    {
+        public override string Id { get { return "ultrapuck.invisibility"; } }
+        public override string Name { get { return "Invisibility"; } }
+        public override string Description { get { return "Brake to turn " + CardText.Good("invisible for 5 s") + ". Opponents can't see you; teammates still can. 12 s cooldown."; } }
+        public override Color Color { get { return new Color(0.55f, 0.75f, 0.95f); } }
+        public override int MaxPerPlayer { get { return 1; } }
+        public override void Apply(CardStats s) { s.Invisibility = true; }
+    }
+
     internal sealed class FriendlyFireCard : UltraCard
     {
         public override string Id { get { return "ultrapuck.friendlyfire"; } }
         public override string Name { get { return "Friendly Fire"; } }
-        public override string Description { get { return CardText.Stat(3.5f, "Teammate Knockback", true) + "\nDash into a teammate to launch them. Works with Puck Gun too."; } }
+        public override string Description { get { return CardText.Stat(2.5f, "Teammate Knockback", true) + "\nDash into a teammate to launch them. Works with Puck Gun too."; } }
         public override Color Color { get { return new Color(1.00f, 0.45f, 0.35f); } }
         public override int MaxPerPlayer { get { return 1; } }
-        public override void Apply(CardStats s) { s.FriendlyFire *= 3.5f; }
+        public override void Apply(CardStats s) { s.FriendlyFire *= 2.5f; }
     }
 }

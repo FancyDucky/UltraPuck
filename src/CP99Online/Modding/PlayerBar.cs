@@ -28,6 +28,7 @@ namespace UltraPuck
             float offsetY, float length, float thickness)
         {
             if (_back.Count != segments) Build(segments);
+            if (CP99Online.Rounds.Invisibility.HiddenFromMe(b)) visible = false; // no bars giving away an invisible player
             var full = value >= segments - 0.001f;
             var target = visible && (always || !full) ? 1f : 0f;
             var fade = target > _alpha ? 10f : (Max(_pulse) > 0.01f ? 0f : 2.5f); // stay up while the pulse plays
