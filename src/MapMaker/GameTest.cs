@@ -15,6 +15,8 @@ namespace UltraPuckMapMaker
     {
         public static string Folder { get { return Path.Combine(Paths.MapsFolder, "Testing"); } }
 
+        private const string SteamAppId = "337960"; // ClusterPuck 99
+
         /// <summary>Returns what happened, for the status bar; throws if the map can't be written.</summary>
         public static string Run(MapData map, string controls, int bots, bool launch)
         {
@@ -41,7 +43,12 @@ namespace UltraPuckMapMaker
                 return "Sent to the game: it loads the map in a moment.";
             }
             if (!launch) return "Request written (the game isn't running).";
-            Process.Start(new ProcessStartInfo(Path.Combine(game, "ClusterPuck99.exe")) { WorkingDirectory = game, UseShellExecute = false });
+            // through Steam, like its Play button: Steam Input (PlayStation and other pads) and launch options apply
+            try { Process.Start(new ProcessStartInfo("steam://rungameid/" + SteamAppId) { UseShellExecute = true }); }
+            catch (Exception)
+            {
+                Process.Start(new ProcessStartInfo(Path.Combine(game, "ClusterPuck99.exe")) { WorkingDirectory = game, UseShellExecute = false });
+            }
             return "Starting the game: it goes straight to the map once it has loaded.";
         }
 

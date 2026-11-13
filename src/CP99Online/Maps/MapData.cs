@@ -29,7 +29,13 @@ namespace CP99Online.Maps
         Unwall, // removes walls, keeps the floor
     }
 
-    internal enum ShapeKind { Rect, Circle, Poly, Arc }
+    internal enum ShapeKind { Rect, Circle, Poly, Arc, Tiles }
+
+    /// <summary>
+    /// What part of its square a tile fills (Tiles shapes): all of it, or the triangle in one corner, named by the
+    /// corner with the right angle (the Arena Creator's diagonal tiles).
+    /// </summary>
+    internal enum TileShape { Full = 0, BottomLeft = 1, BottomRight = 2, TopRight = 3, TopLeft = 4 }
 
     /// <summary>Which side of a line a shape is limited to (used by mirroring): x &lt;= V, x &gt;= V, y &lt;= V, y &gt;= V.</summary>
     internal enum KeepSide { Left, Right, Below, Above }
@@ -49,6 +55,7 @@ namespace CP99Online.Maps
         /// <summary>
         /// Rect: x0 y0 x1 y1 [corner radius]. Circle: cx cy r. Poly: x y x y ... (3+ points).
         /// Arc: cx cy radius startDeg endDeg thickness (a band along the circle, counter-clockwise from start to end, round ends).
+        /// Tiles: x y shape x y shape ... one 1 x 1 square per triple, from (x, y) to (x + 1, y + 1); shape is a TileShape.
         /// </summary>
         public float[] P;
         /// <summary>Only the part of the shape on these sides counts (written as "keep left 0" etc.).</summary>
@@ -65,6 +72,7 @@ namespace CP99Online.Maps
         public int Team; // Goal / Spawn: 1 or 2
         public float X, Y;
         public float Angle; // degrees (reserved; the game's objects are round)
+        public float Power = 100f; // Boost: how hard it launches you, in % of the game's own boost pad
         public MapObject Clone() { return (MapObject)MemberwiseClone(); }
     }
 
@@ -82,7 +90,8 @@ namespace CP99Online.Maps
     /// hole circle 0 0 1.5
     /// goal 1 -9 0
     /// spawn 2 4 0
-    /// boost 0 3
+    /// boost 0 3 power 150
+    /// floor 2 tiles 0 0 0  1 0 0  2 0 3
     /// </code>
     /// </summary>
     internal sealed class MapData
@@ -127,6 +136,7 @@ namespace CP99Online.Maps
                 if (o.Kind == ObjKind.Goal || o.Kind == ObjKind.Spawn) sb.Append(' ').Append(o.Team);
                 sb.Append(' ').Append(Num(o.X)).Append(' ').Append(Num(o.Y));
                 if (o.Angle != 0f) sb.Append(' ').Append(Num(o.Angle));
+                if (o.Kind == ObjKind.Boost && Math.Abs(o.Power - 100f) > 1e-3f) sb.Append(" power ").Append(Num(o.Power));
                 sb.Append('\n');
             }
             return sb.ToString();
@@ -210,6 +220,7 @@ namespace CP99Online.Maps
                 case "circle": s.Kind = ShapeKind.Circle; break;
                 case "poly": s.Kind = ShapeKind.Poly; break;
                 case "arc": s.Kind = ShapeKind.Arc; break;
+                case "tiles": s.Kind = ShapeKind.Tiles; break;
                 default: throw new FormatException("unknown shape \"" + t[i - 1] + "\"");
             }
             var p = new List<float>();
@@ -229,8 +240,8 @@ namespace CP99Online.Maps
                 s.Keeps.Add(new Keep(side, float.Parse(t[i + 2], NumberStyles.Float, Inv)));
                 i += 3;
             }
-            var need = s.Kind == ShapeKind.Rect ? 4 : s.Kind == ShapeKind.Circle ? 3 : s.Kind == ShapeKind.Arc ? 6 : 6;
-            if (s.P.Length < need || (s.Kind == ShapeKind.Poly && s.P.Length % 2 != 0)) throw new FormatException("not enough numbers for a " + s.Kind.ToString().ToLowerInvariant());
+            var need = s.Kind == ShapeKind.Rect ? 4 : s.Kind == ShapeKind.Circle ? 3 : s.Kind == ShapeKind.Tiles ? 3 : 6;
+            if (s.P.Length < need || (s.Kind == ShapeKind.Poly && s.P.Length % 2 != 0) || (s.Kind == ShapeKind.Tiles && s.P.Length % 3 != 0)) throw new FormatException("not enough numbers for a " + s.Kind.ToString().ToLowerInvariant());
             return s;
         }
 
@@ -241,7 +252,11 @@ namespace CP99Online.Maps
             if (team) o.Team = int.Parse(t[i++], Inv) == 2 ? 2 : 1;
             o.X = float.Parse(t[i++], NumberStyles.Float, Inv);
             o.Y = float.Parse(t[i++], NumberStyles.Float, Inv);
-            if (i < t.Length) o.Angle = float.Parse(t[i], NumberStyles.Float, Inv);
+            for (; i < t.Length; i++)
+            {
+                if (t[i].ToLowerInvariant() == "power" && i + 1 < t.Length) o.Power = Math.Max(0f, float.Parse(t[++i], NumberStyles.Float, Inv));
+                else o.Angle = float.Parse(t[i], NumberStyles.Float, Inv);
+            }
             return o;
         }
 
@@ -333,6 +348,26 @@ namespace CP99Online.Maps
                     else { p[1] = -p[1]; p[3] = -a1; p[4] = -a0; }
                     break;
                 }
+                case ShapeKind.Tiles:
+                    for (var i = 0; i + 2 < p.Length; i += 3)
+                    {
+                        // the square x..x+1 lands on -x-1..-x; triangles swap corners
+                        var t = (TileShape)(int)p[i + 2];
+                        if (acrossX)
+                        {
+                            p[i] = -p[i] - 1f;
+                            t = t == TileShape.BottomLeft ? TileShape.BottomRight : t == TileShape.BottomRight ? TileShape.BottomLeft
+                              : t == TileShape.TopLeft ? TileShape.TopRight : t == TileShape.TopRight ? TileShape.TopLeft : t;
+                        }
+                        else
+                        {
+                            p[i + 1] = -p[i + 1] - 1f;
+                            t = t == TileShape.BottomLeft ? TileShape.TopLeft : t == TileShape.TopLeft ? TileShape.BottomLeft
+                              : t == TileShape.BottomRight ? TileShape.TopRight : t == TileShape.TopRight ? TileShape.BottomRight : t;
+                        }
+                        p[i + 2] = (int)t;
+                    }
+                    break;
                 default:
                     for (var i = 0; i + 1 < p.Length; i += 2) { if (acrossX) p[i] = -p[i]; else p[i + 1] = -p[i + 1]; }
                     break;

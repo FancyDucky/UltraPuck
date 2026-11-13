@@ -130,7 +130,11 @@ namespace CP99Online.Maps
                 {
                     case ObjKind.Bumper: go = Make(displayOnly ? sp.bumperPropPrefab : sp.bumperElementPrefab, pos, rot, holder); break;
                     case ObjKind.Spike: go = Make(displayOnly ? sp.spikePropPrefab : sp.spikeElementPrefab, pos, rot, holder); break;
-                    case ObjKind.Boost: go = Make(displayOnly ? sp.boosterPropPrefab : sp.boosterElementPrefab, pos, rot, holder); break;
+                    case ObjKind.Boost:
+                        go = Make(displayOnly ? sp.boosterPropPrefab : sp.boosterElementPrefab, pos, rot, holder);
+                        if (go != null && !displayOnly && Math.Abs(o.Power - 100f) > 1e-3f)
+                            foreach (var b in go.GetComponentsInChildren<Boost>(true)) b.boostSpeed *= o.Power / 100f;
+                        break;
                     case ObjKind.Goal:
                         if (displayOnly || arena == null) go = Make(team == 0 ? sp.goal1PropPrefab : sp.goal2PropPrefab, pos, rot, null);
                         else
@@ -173,9 +177,12 @@ namespace CP99Online.Maps
         {
             var geo = Geometry(map);
             LogPrefab(sp.boxColliderPrefab);
-            Colliders(sp, "UltraPuckMapGround", "Ground", geo.GroundBoxes, null);
-            Colliders(sp, "UltraPuckMapForcefield", "Forcefield", geo.ForcefieldFill, geo.FloorOutlines);
-            Colliders(sp, "UltraPuckMapWalls", "Wall", geo.WallFill, geo.WallOutlines);
+            Colliders(sp, "UltraPuckMapGround", "Ground", geo.GroundBoxes, null, null);
+            Colliders(sp, "UltraPuckMapForcefield", "Forcefield", geo.ForcefieldFill, geo.FloorOutlines, null);
+            // walls are one solid polygon (outlines with their holes): anything pushed into a wall is pushed back out
+            // the nearest side. (Edges plus boxes set inside them could hold a player in the gap between.)
+            Colliders(sp, "UltraPuckMapWalls", "Wall", null, null, geo.WallOutlines);
+            CheckWalls(geo);
             PathNodes(geo);
         }
 
@@ -204,7 +211,7 @@ namespace CP99Online.Maps
         }
 
         /// <summary>One object per layer: the prefab's settings, box pieces plus edge outlines (smooth to bounce off).</summary>
-        private static void Colliders(CustomArenaSpawner sp, string name, string layer, List<Box> boxes, List<List<V2>> outlines)
+        private static void Colliders(CustomArenaSpawner sp, string name, string layer, List<Box> boxes, List<List<V2>> outlines, List<List<V2>> solid)
         {
             var go = UnityEngine.Object.Instantiate(sp.boxColliderPrefab, new Vector3(0f, 0f, 0.5f), Quaternion.identity) as GameObject;
             go.name = name;
@@ -214,6 +221,7 @@ namespace CP99Online.Maps
             var mat = template != null ? template.sharedMaterial : null;
             var trigger = template != null && template.isTrigger;
             if (template != null) UnityEngine.Object.DestroyImmediate(template);
+            if (boxes != null)
             foreach (var b in boxes)
             {
                 var c = go.AddComponent<BoxCollider2D>();
@@ -233,7 +241,41 @@ namespace CP99Online.Maps
                     e.sharedMaterial = mat;
                     e.isTrigger = trigger;
                 }
+            if (solid != null && solid.Count > 0)
+            {
+                var pc = go.AddComponent<PolygonCollider2D>();
+                pc.pathCount = solid.Count;
+                for (var k = 0; k < solid.Count; k++)
+                {
+                    var loop = solid[k];
+                    var pts = new Vector2[loop.Count];
+                    for (var i = 0; i < loop.Count; i++) pts[i] = new Vector2(loop[i].X, loop[i].Y);
+                    pc.SetPath(k, pts);
+                }
+                pc.sharedMaterial = mat;
+                pc.isTrigger = trigger;
+            }
             go.SetActive(true);
+        }
+
+        /// <summary>Spot-checks the wall collider against the map (points clearly inside or outside a wall).</summary>
+        private static void CheckWalls(MapGeometry geo)
+        {
+            var mask = 1 << LayerMask.NameToLayer("Wall");
+            int tested = 0, wrong = 0;
+            var rnd = new System.Random(1);
+            for (var n = 0; n < 4000 && tested < 400; n++)
+            {
+                var x = geo.MinX + (float)rnd.NextDouble() * (geo.MaxX - geo.MinX);
+                var y = geo.MinY + (float)rnd.NextDouble() * (geo.MaxY - geo.MinY);
+                var d = geo.WallDistance(x, y);
+                if (Math.Abs(d) < 0.1f) continue;
+                tested++;
+                var hit = Physics2D.OverlapPoint(new Vector2(x, y), mask) != null;
+                if (hit != (d < 0f)) wrong++;
+            }
+            if (wrong > 0) NetLog.Warn("Maps: wall collider differs from the map at " + wrong + " of " + tested + " test points");
+            else NetLog.Info("Maps: wall collider matches the map (" + tested + " test points)");
         }
 
         private static void LogPrefab(GameObject prefab)

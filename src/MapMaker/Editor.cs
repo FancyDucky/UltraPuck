@@ -9,7 +9,7 @@ namespace UltraPuckMapMaker
 {
     internal enum Tool { Select, Floor, Wall, Hole, Unwall, RedGoal, BlueGoal, RedSpawn, BlueSpawn, Boost, Bumper, Spike }
 
-    internal enum ShapeMode { Rectangle, Circle, Arc, Polygon }
+    internal enum ShapeMode { Rectangle, Circle, Arc, Polygon, Tile }
 
     /// <summary>The map being edited: selection, undo / redo (whole-map snapshots) and files.</summary>
     internal sealed class Editor
@@ -22,7 +22,8 @@ namespace UltraPuckMapMaker
 
         public object Selected; // MapShape or MapObject
         public Tool Tool = Tool.Floor;
-        public ShapeMode Mode = ShapeMode.Rectangle;
+        public ShapeMode Mode = ShapeMode.Tile;
+        public TileShape TileShape = TileShape.Full; // what a tile fills: the square or a corner triangle
         public int Color; // 0-11
         public float Corner; // corner radius for new rectangles
         public float Thickness = 1f; // width of new arcs
@@ -142,6 +143,12 @@ namespace UltraPuckMapMaker
             if (ToolChanged != null) ToolChanged();
         }
 
+        public void SetTileShape(TileShape t)
+        {
+            TileShape = t;
+            if (ToolChanged != null) ToolChanged();
+        }
+
         public void SetColor(int c)
         {
             Color = c;
@@ -200,6 +207,14 @@ namespace UltraPuckMapMaker
                 case ShapeKind.Rect: p[0] += dx; p[1] += dy; p[2] += dx; p[3] += dy; break;
                 case ShapeKind.Circle:
                 case ShapeKind.Arc: p[0] += dx; p[1] += dy; break;
+                case ShapeKind.Tiles:
+                {
+                    // a new array: the geometry caches tiles by array
+                    var q = (float[])p.Clone();
+                    for (var i = 0; i + 2 < q.Length; i += 3) { q[i] += dx; q[i + 1] += dy; }
+                    s.P = q;
+                    break;
+                }
                 default: for (var i = 0; i + 1 < p.Length; i += 2) { p[i] += dx; p[i + 1] += dy; } break;
             }
             for (var i = 0; i < s.Keeps.Count; i++)
@@ -336,6 +351,7 @@ namespace UltraPuckMapMaker
                 case ShapeKind.Rect: shape = "rectangle " + N(Math.Abs(p[2] - p[0])) + " x " + N(Math.Abs(p[3] - p[1])) + " at " + N((p[0] + p[2]) / 2) + ", " + N((p[1] + p[3]) / 2); break;
                 case ShapeKind.Circle: shape = "circle r " + N(p[2]) + " at " + N(p[0]) + ", " + N(p[1]); break;
                 case ShapeKind.Arc: shape = "arc r " + N(p[2]) + " at " + N(p[0]) + ", " + N(p[1]); break;
+                case ShapeKind.Tiles: shape = p.Length / 3 + (p.Length / 3 == 1 ? " tile" : " tiles"); break;
                 default: shape = "polygon, " + p.Length / 2 + " corners"; break;
             }
             return what + ", " + shape + (s.Keeps.Count > 0 ? " (mirrored half)" : string.Empty);

@@ -201,6 +201,16 @@ namespace CP99Online.Maps
                     b.X0 -= half; b.Y0 -= half; b.X1 += half; b.Y1 += half;
                     return b;
                 }
+                case ShapeKind.Tiles:
+                {
+                    var b = new Box(float.MaxValue, float.MaxValue, float.MinValue, float.MinValue);
+                    for (var i = 0; i + 2 < p.Length; i += 3)
+                    {
+                        b.X0 = Math.Min(b.X0, p[i]); b.X1 = Math.Max(b.X1, p[i] + 1f);
+                        b.Y0 = Math.Min(b.Y0, p[i + 1]); b.Y1 = Math.Max(b.Y1, p[i + 1] + 1f);
+                    }
+                    return b;
+                }
                 default:
                 {
                     var b = new Box(float.MaxValue, float.MaxValue, float.MinValue, float.MinValue);
@@ -269,6 +279,8 @@ namespace CP99Online.Maps
                     var d1 = (float)Math.Sqrt((x - e1x) * (x - e1x) + (y - e1y) * (y - e1y));
                     return Math.Min(d0, d1) - half;
                 }
+                case ShapeKind.Tiles:
+                    return TileSet.Of(p).Distance(x, y);
                 default:
                 {
                     // polygon (Inigo Quilez's sdPolygon)
@@ -288,6 +300,111 @@ namespace CP99Online.Maps
                     }
                     return sign * (float)Math.Sqrt(d);
                 }
+            }
+        }
+
+        /// <summary>
+        /// A Tiles shape, indexed by square: the signed distance to the edge of all its tiles together (exact within
+        /// two tiles of the edge, clamped beyond, which is all the outlines and colliders need).
+        /// </summary>
+        private sealed class TileSet
+        {
+            private const int Reach = 2;
+            private const float Far = Reach + 0.5f;
+            private readonly Dictionary<long, int> _cells = new Dictionary<long, int>();
+            private readonly float _ox, _oy; // the tiles' grid offset (their squares start at whole numbers + this)
+
+            private static readonly Dictionary<float[], TileSet> Cache = new Dictionary<float[], TileSet>();
+
+            internal static TileSet Of(float[] p)
+            {
+                TileSet t;
+                lock (Cache)
+                {
+                    if (Cache.TryGetValue(p, out t)) return t;
+                    if (Cache.Count > 64) Cache.Clear();
+                    t = new TileSet(p);
+                    Cache[p] = t;
+                }
+                return t;
+            }
+
+            private TileSet(float[] p)
+            {
+                if (p.Length >= 3) { _ox = p[0] - (float)Math.Floor(p[0]); _oy = p[1] - (float)Math.Floor(p[1]); }
+                for (var i = 0; i + 2 < p.Length; i += 3)
+                {
+                    var cx = (int)Math.Round(p[i] - _ox); var cy = (int)Math.Round(p[i + 1] - _oy);
+                    _cells[Key(cx, cy)] = Math.Max(0, Math.Min(4, (int)p[i + 2])); // a later tile on the same square wins
+                }
+            }
+
+            private static long Key(int x, int y) { return ((long)x << 32) ^ (uint)y; }
+
+            private int At(int x, int y) { int t; return _cells.TryGetValue(Key(x, y), out t) ? t : -1; }
+
+            internal float Distance(float x, float y)
+            {
+                var u = x - _ox; var v = y - _oy;
+                int ci = (int)Math.Floor(u), cj = (int)Math.Floor(v);
+                var inside = Covers(At(ci, cj), u - ci, v - cj);
+                var best = Far;
+                for (var dj = -Reach; dj <= Reach; dj++)
+                    for (var di = -Reach; di <= Reach; di++)
+                    {
+                        int i = ci + di, j = cj + dj;
+                        var t = At(i, j);
+                        // inside: the nearest part of a square that isn't covered; outside: the nearest covered part
+                        int part;
+                        if (inside) { if (t == 0) continue; part = t < 0 ? 0 : Complement(t); }
+                        else { if (t < 0) continue; part = t; }
+                        best = Math.Min(best, PartDistance(part, u - i, v - j));
+                    }
+                return inside ? -best : best;
+            }
+
+            private static int Complement(int t) { return t == 1 ? 3 : t == 3 ? 1 : t == 2 ? 4 : 2; }
+
+            /// <summary>Is the local point (0..1 in the square) in this tile? -1 = no tile.</summary>
+            private static bool Covers(int t, float u, float v)
+            {
+                switch (t)
+                {
+                    case 0: return true;
+                    case 1: return u + v <= 1f;
+                    case 2: return u >= v;
+                    case 3: return u + v >= 1f;
+                    case 4: return v >= u;
+                    default: return false;
+                }
+            }
+
+            // corners of each part, square 0..1: full, then the four triangles
+            private static readonly float[][] Parts =
+            {
+                new[] { 0f, 0f, 1f, 0f, 1f, 1f, 0f, 1f },
+                new[] { 0f, 0f, 1f, 0f, 0f, 1f },
+                new[] { 0f, 0f, 1f, 0f, 1f, 1f },
+                new[] { 1f, 0f, 1f, 1f, 0f, 1f },
+                new[] { 0f, 0f, 1f, 1f, 0f, 1f },
+            };
+
+            /// <summary>Distance from a local point to a part (0 if it's in it).</summary>
+            private static float PartDistance(int part, float u, float v)
+            {
+                if (Covers(part, u, v) && u >= 0f && u <= 1f && v >= 0f && v <= 1f) return 0f;
+                var c = Parts[part];
+                var n = c.Length / 2;
+                var d = float.MaxValue;
+                for (int i = 0, j = n - 1; i < n; j = i, i++)
+                {
+                    float ax = c[2 * j], ay = c[2 * j + 1], ex = c[2 * i] - ax, ey = c[2 * i + 1] - ay;
+                    float wx = u - ax, wy = v - ay;
+                    var t = Math.Max(0f, Math.Min(1f, (wx * ex + wy * ey) / (ex * ex + ey * ey)));
+                    float bx = wx - ex * t, by = wy - ey * t;
+                    d = Math.Min(d, bx * bx + by * by);
+                }
+                return (float)Math.Sqrt(d);
             }
         }
 

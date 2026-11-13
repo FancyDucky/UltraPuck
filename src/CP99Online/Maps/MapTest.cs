@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using CP99Online.Net;
 using UnityEngine;
 
@@ -94,15 +95,11 @@ namespace CP99Online.Maps
             ColorManager.team1Color = TeamColor.RED;
             ColorManager.team2Color = TeamColor.BLUE;
 
-            // keyboard (0) or any controller (-1); auto: a controller if one is plugged in
-            int joystick;
-            if (controls == "keyboard") joystick = 0;
-            else if (controls == "controller") joystick = -1;
-            else
-            {
-                joystick = 0;
-                foreach (var n in Input.GetJoystickNames()) if (!string.IsNullOrEmpty(n) && n.Trim().Length > 0) joystick = -1;
-            }
+            // keyboard (0) or one controller (1-8, like player select); auto: a controller if one is plugged in.
+            // Not the game's "any controller": a PlayStation pad can show up twice (the pad itself and Steam's
+            // Xbox-style copy of it) and their sticks and triggers would mix.
+            var pad = PickController();
+            int joystick = controls == "keyboard" ? 0 : controls == "controller" ? (pad > 0 ? pad : -1) : (pad > 0 ? pad : 0);
             var players = new List<PlayerData>();
             var me = new PlayerData(AI_: false, 0, joystick, 0) { teamColor = ColorManager.team1Color };
             me.account = new Account("Player", AI_: false, 0, 0, 0, 0, 0, 0, 0, 0f);
@@ -128,9 +125,62 @@ namespace CP99Online.Maps
             }
 
             Time.timeScale = 1f;
-            NetLog.Info("Map test: \"" + map.Name + "\" from " + path + ", controls " + (joystick == 0 ? "keyboard" : "controller") + ", bots " + bots);
+            NetLog.Info("Map test: \"" + map.Name + "\" from " + path + ", controls " + (joystick == 0 ? "keyboard" : "controller " + joystick) + ", bots " + bots
+                + "; controllers: " + string.Join(", ", Input.GetJoystickNames().Select((n, i) => (i + 1) + "=\"" + n + "\"").ToArray()));
             Application.LoadLevel("Arena3D");
             Toast.Show("Testing \"" + map.Name + "\": pause to leave. Test in game again to reload it.");
+        }
+
+        /// <summary>
+        /// The controller to play with (1-8), or 0 if none: the last one that pressed a button in the game, else the
+        /// one that looks like an Xbox-style pad (what Steam Input turns other pads into), else the first.
+        /// </summary>
+        private static int PickController()
+        {
+            var names = Input.GetJoystickNames();
+            int best = 0, bestScore = int.MinValue;
+            for (var i = 0; i < names.Length && i < 8; i++)
+            {
+                if ((names[i] ?? string.Empty).Trim().Length == 0) continue;
+                var score = NameScore(names[i]);
+                if (i + 1 == _lastPressed) score += 4;
+                if (score > bestScore) { bestScore = score; best = i + 1; }
+            }
+            return best;
+        }
+
+        /// <summary>Xbox-style pads (and Steam's copies of other pads) first, raw PlayStation pads last.</summary>
+        private static int NameScore(string name)
+        {
+            var n = (name ?? string.Empty).Trim().ToLowerInvariant();
+            var score = 0;
+            if (n.Contains("xbox") || n.Contains("xinput") || n.StartsWith("controller (")) score += 2;
+            if (n.Contains("wireless controller") || n.Contains("dualsense") || n.Contains("dualshock") || n.Contains("sony")) score -= 1;
+            return score;
+        }
+
+        private static int _lastPressed;
+        private static bool _noButtons;
+
+        private void LateUpdate()
+        {
+            // which controller the player is actually using (A, B or Start, as the game's menus read them). One press
+            // can show up on two controllers (a pad and Steam's copy of it): keep the Xbox-style one.
+            if (_noButtons) return;
+            try
+            {
+                string[] names = null;
+                int pick = 0, pickScore = int.MinValue;
+                for (var n = 1; n <= 8; n++)
+                {
+                    if (!(Input.GetButtonDown("A_P" + n) || Input.GetButtonDown("B_P" + n) || Input.GetButtonDown("Start_P" + n))) continue;
+                    if (names == null) names = Input.GetJoystickNames();
+                    var score = n <= names.Length ? NameScore(names[n - 1]) : 0;
+                    if (score > pickScore) { pickScore = score; pick = n; }
+                }
+                if (pick > 0) _lastPressed = pick;
+            }
+            catch (Exception) { _noButtons = true; } // not set up in this game's input settings
         }
 
         private static PlayerData Bot(int team, string name)

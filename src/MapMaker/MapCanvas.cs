@@ -34,6 +34,12 @@ namespace UltraPuckMapMaker
         private bool _arcBending;                             // arc: ends placed, the mouse sets the bend
         private readonly List<V2> _poly = new List<V2>();     // polygon: corners placed so far
         private Tool _pendTool; private ShapeMode _pendMode;  // what the unfinished shape was started with
+        private bool _flip;                                   // Ctrl held when it started: the opposite (hole, remove wall)
+        private bool _painting; private MapShape _paintShape; private int _lastCellX, _lastCellY; // tile painting
+
+        /// <summary>Self-test: modifier keys to pretend are held (else the real ones).</summary>
+        internal Keys? SimMods;
+        private Keys Mods { get { return SimMods ?? ModifierKeys; } }
 
         // resize handles on the selected shape
         private enum HandleLook { Square, Round, Small }
@@ -316,21 +322,15 @@ namespace UltraPuckMapMaker
 
         private void DrawToolPreview(Graphics g)
         {
-            if (!Pending) return;
-            var s = PendingShape();
-            if (s != null)
+            if (!Pending)
             {
-                using (var path = ShapePath(s))
-                using (var view = ViewMatrix())
-                {
-                    path.Transform(view);
-                    var c = s.Op == MapOp.Hole ? System.Drawing.Color.FromArgb(90, 0, 0, 0)
-                        : s.Op == MapOp.Unwall ? System.Drawing.Color.FromArgb(70, 255, 255, 255)
-                        : System.Drawing.Color.FromArgb(150, s.Op == MapOp.Wall ? Editor.WallColor(s.Color) : Editor.Palette[s.Color]);
-                    using (var b = new SolidBrush(c)) g.FillPath(b, path);
-                    using (var pen = new Pen(System.Drawing.Color.White, 1.5f) { DashStyle = DashStyle.Dot }) g.DrawPath(pen, path);
-                }
+                // tile mode: the tile the next click paints
+                if (IsShapeTool(_ed.Tool) && _ed.Mode == ShapeMode.Tile && !_painting && !_panning && ClientRectangle.Contains(PointToClient(MousePosition)))
+                    FillPreview(g, TileAt(OpFor((Mods & Keys.Control) != 0), Cell(_mouse.X), Cell(_mouse.Y)));
+                return;
             }
+            var s = PendingShape();
+            if (s != null) FillPreview(g, s);
             if (_poly.Count > 0)
             {
                 // the corners so far, the next side to the mouse, and the first corner (click it to finish)
@@ -366,6 +366,20 @@ namespace UltraPuckMapMaker
             }
         }
 
+        private void FillPreview(Graphics g, MapShape s)
+        {
+            using (var path = ShapePath(s))
+            using (var view = ViewMatrix())
+            {
+                path.Transform(view);
+                var c = s.Op == MapOp.Hole ? System.Drawing.Color.FromArgb(110, 0, 0, 0)
+                    : s.Op == MapOp.Unwall ? System.Drawing.Color.FromArgb(70, 255, 255, 255)
+                    : System.Drawing.Color.FromArgb(150, s.Op == MapOp.Wall ? Editor.WallColor(s.Color) : Editor.Palette[s.Color]);
+                using (var b = new SolidBrush(c)) g.FillPath(b, path);
+                using (var pen = new Pen(System.Drawing.Color.White, 1.5f) { DashStyle = DashStyle.Dot }) g.DrawPath(pen, path);
+            }
+        }
+
         /// <summary>The outline of one shape on its own (map units), for selection and previews.</summary>
         internal static GraphicsPath ShapePath(MapShape s)
         {
@@ -390,6 +404,22 @@ namespace UltraPuckMapMaker
                 }
                 case ShapeKind.Circle:
                     path.AddEllipse(p[0] - p[2], p[1] - p[2], p[2] * 2, p[2] * 2);
+                    break;
+                case ShapeKind.Tiles:
+                    path.FillMode = FillMode.Winding;
+                    for (var i = 0; i + 2 < p.Length; i += 3)
+                    {
+                        float x = p[i], y = p[i + 1];
+                        PointF a = new PointF(x, y), b = new PointF(x + 1, y), c = new PointF(x + 1, y + 1), d = new PointF(x, y + 1);
+                        switch ((TileShape)(int)p[i + 2])
+                        {
+                            case TileShape.BottomLeft: path.AddPolygon(new[] { a, b, d }); break;
+                            case TileShape.BottomRight: path.AddPolygon(new[] { a, b, c }); break;
+                            case TileShape.TopRight: path.AddPolygon(new[] { b, c, d }); break;
+                            case TileShape.TopLeft: path.AddPolygon(new[] { a, c, d }); break;
+                            default: path.AddPolygon(new[] { a, b, c, d }); break;
+                        }
+                    }
                     break;
                 case ShapeKind.Arc:
                 {
@@ -422,12 +452,38 @@ namespace UltraPuckMapMaker
 
         private static bool IsShapeTool(Tool t) { return t == Tool.Floor || t == Tool.Wall || t == Tool.Hole || t == Tool.Unwall; }
 
-        private MapShape PendingShape()
+        /// <summary>What the selected tool paints; flipped (Ctrl): floor and hole swap, so do wall and remove wall.</summary>
+        private MapOp OpFor(bool flip)
         {
             var op = _ed.Tool == Tool.Floor ? MapOp.Floor : _ed.Tool == Tool.Wall ? MapOp.Wall : _ed.Tool == Tool.Hole ? MapOp.Hole : MapOp.Unwall;
+            if (!flip) return op;
+            return op == MapOp.Floor ? MapOp.Hole : op == MapOp.Hole ? MapOp.Floor : op == MapOp.Wall ? MapOp.Unwall : MapOp.Wall;
+        }
+
+        private static int Cell(float v) { return (int)Math.Floor(v); }
+
+        /// <summary>One tile of the current tile shape at a square.</summary>
+        private MapShape TileAt(MapOp op, int cx, int cy)
+        {
+            return new MapShape { Op = op, Color = _ed.Color, Kind = ShapeKind.Tiles, P = new float[] { cx, cy, (int)_ed.TileShape } };
+        }
+
+        private MapShape PendingShape()
+        {
+            var op = OpFor(_flip);
             var s = new MapShape { Op = op, Color = _ed.Color };
             switch (_ed.Mode)
             {
+                case ShapeMode.Tile:
+                {
+                    // Shift / Ctrl drag in tile mode: whole squares from the first one to the last
+                    int ax = Cell(_dragFrom.X), ay = Cell(_dragFrom.Y), bx = Cell(_dragTo.X), by = Cell(_dragTo.Y);
+                    if (ax == bx && ay == by) return TileAt(op, ax, ay);
+                    float x0 = Math.Min(ax, bx), y0 = Math.Min(ay, by), x1 = Math.Max(ax, bx) + 1, y1 = Math.Max(ay, by) + 1;
+                    s.Kind = ShapeKind.Rect;
+                    s.P = _ed.Corner > 0f ? new[] { x0, y0, x1, y1, _ed.Corner } : new[] { x0, y0, x1, y1 };
+                    break;
+                }
                 case ShapeMode.Circle:
                 {
                     var r = Snap((_dragTo - _dragFrom).Length);
@@ -470,6 +526,8 @@ namespace UltraPuckMapMaker
         {
             switch (_ed.Mode)
             {
+                case ShapeMode.Tile:
+                    return _dragging ? (Math.Abs(Cell(_dragTo.X) - Cell(_dragFrom.X)) + 1) + " x " + (Math.Abs(Cell(_dragTo.Y) - Cell(_dragFrom.Y)) + 1) + " tiles" : null;
                 case ShapeMode.Circle: return _dragging ? "radius " + MapData.Num(Snap((_dragTo - _dragFrom).Length)) : null;
                 case ShapeMode.Arc:
                     if (s == null) return null;
@@ -557,6 +615,7 @@ namespace UltraPuckMapMaker
         {
             var list = new List<Grip>();
             var p = s.P;
+            if (s.Kind == ShapeKind.Tiles) return list; // tiles move as a whole
             switch (s.Kind)
             {
                 case ShapeKind.Rect:
@@ -774,13 +833,29 @@ namespace UltraPuckMapMaker
             }
             if (IsShapeTool(_ed.Tool))
             {
+                var mods = Mods;
                 var sp = SnapPoint(m);
                 _hover = sp;
-                if (_ed.Mode == ShapeMode.Polygon) { PolygonClick(sp, e.Location); return; }
+                if (_ed.Mode == ShapeMode.Polygon)
+                {
+                    if (_poly.Count == 0) _flip = (mods & Keys.Control) != 0;
+                    PolygonClick(sp, e.Location);
+                    return;
+                }
                 if (_arcBending) { FinishShape(); return; }
+                _flip = (mods & Keys.Control) != 0;
+                if (_ed.Mode == ShapeMode.Tile && (mods & (Keys.Shift | Keys.Control)) == 0)
+                {
+                    // tile mode: paint tiles one square at a time (Shift or Ctrl drags out an area instead)
+                    _painting = true;
+                    _paintShape = null;
+                    _lastCellX = Cell(m.X); _lastCellY = Cell(m.Y);
+                    PaintCell(_lastCellX, _lastCellY);
+                    return;
+                }
                 _dragging = true;
                 _pendTool = _ed.Tool; _pendMode = _ed.Mode;
-                _dragFrom = _dragTo = sp;
+                _dragFrom = _dragTo = _ed.Mode == ShapeMode.Tile ? m : sp;
                 Invalidate();
                 return;
             }
@@ -813,8 +888,21 @@ namespace UltraPuckMapMaker
             }
             else if (_dragging)
             {
-                _dragTo = _hover = SnapPoint(m);
+                _dragTo = _hover = _ed.Mode == ShapeMode.Tile ? m : SnapPoint(m);
                 Invalidate();
+            }
+            else if (_painting)
+            {
+                // every square between the last one and this one, so quick strokes leave no gaps
+                int cx = Cell(m.X), cy = Cell(m.Y);
+                var steps = Math.Max(Math.Abs(cx - _lastCellX), Math.Abs(cy - _lastCellY));
+                for (var k = 1; k <= steps; k++)
+                    PaintCell((int)Math.Round(_lastCellX + (cx - _lastCellX) * (float)k / steps), (int)Math.Round(_lastCellY + (cy - _lastCellY) * (float)k / steps));
+                _lastCellX = cx; _lastCellY = cy;
+            }
+            else if (IsShapeTool(_ed.Tool) && _ed.Mode == ShapeMode.Tile && !_panning)
+            {
+                if (Cell(m.X) != _lastCellX || Cell(m.Y) != _lastCellY) { _lastCellX = Cell(m.X); _lastCellY = Cell(m.Y); Invalidate(); }
             }
             else if (_arcBending || _poly.Count > 0)
             {
@@ -871,6 +959,16 @@ namespace UltraPuckMapMaker
             }
             if (e.Button != MouseButtons.Left) return;
             Capture = false;
+            if (_painting)
+            {
+                _painting = false;
+                var s = _paintShape;
+                _paintShape = null;
+                if (s != null && s.Op == MapOp.Hole)
+                    _ed.Map.Objects.RemoveAll(o => MapGeometry.Distance(s, o.X, o.Y) < 0f); // a hole takes objects with it
+                _ed.Commit();
+                Invalidate();
+            }
             if (_dragging)
             {
                 _dragging = false;
@@ -904,8 +1002,7 @@ namespace UltraPuckMapMaker
                 s = null;
                 if (_poly.Count >= 3)
                 {
-                    var op = _ed.Tool == Tool.Floor ? MapOp.Floor : _ed.Tool == Tool.Wall ? MapOp.Wall : _ed.Tool == Tool.Hole ? MapOp.Hole : MapOp.Unwall;
-                    s = new MapShape { Op = op, Color = _ed.Color, Kind = ShapeKind.Poly, P = Flatten(_poly) };
+                    s = new MapShape { Op = OpFor(_flip), Color = _ed.Color, Kind = ShapeKind.Poly, P = Flatten(_poly) };
                 }
             }
             _dragging = false; _arcBending = false; _poly.Clear();
@@ -917,6 +1014,54 @@ namespace UltraPuckMapMaker
                 _ed.Commit();
             }
             Invalidate();
+        }
+
+        /// <summary>
+        /// Paints one tile. A stroke adds to the last shape if that's tiles of the same paint and colour (one entry in
+        /// the list per stroke at most), else starts a new tiles shape.
+        /// </summary>
+        private void PaintCell(int cx, int cy)
+        {
+            var op = OpFor(_flip);
+            var color = op == MapOp.Floor || op == MapOp.Wall ? _ed.Color : 0;
+            var shape = (float)(int)_ed.TileShape;
+            if (_paintShape == null)
+            {
+                var shapes = _ed.Map.Shapes;
+                var last = shapes.Count > 0 ? shapes[shapes.Count - 1] : null;
+                if (last != null && last.Kind == ShapeKind.Tiles && last.Op == op && (last.Color == color || op == MapOp.Hole || op == MapOp.Unwall)
+                    && last.Keeps.Count == 0 && Whole(last.P))
+                    _paintShape = last;
+                else
+                {
+                    _paintShape = new MapShape { Op = op, Color = color, Kind = ShapeKind.Tiles, P = new float[] { cx, cy, shape } };
+                    shapes.Add(_paintShape);
+                    _ed.Touch();
+                    return;
+                }
+            }
+            var p = _paintShape.P;
+            for (var i = 0; i + 2 < p.Length; i += 3)
+            {
+                if (p[i] != cx || p[i + 1] != cy) continue;
+                if (p[i + 2] == shape) return;
+                var q = (float[])p.Clone(); // a new array: the geometry caches tiles by array
+                q[i + 2] = shape;
+                _paintShape.P = q;
+                _ed.Touch();
+                return;
+            }
+            var n = new float[p.Length + 3];
+            Array.Copy(p, n, p.Length);
+            n[p.Length] = cx; n[p.Length + 1] = cy; n[p.Length + 2] = shape;
+            _paintShape.P = n;
+            _ed.Touch();
+        }
+
+        /// <summary>Tiles on whole-number squares (the tile grid), so painting can add to them.</summary>
+        private static bool Whole(float[] p)
+        {
+            return p.Length >= 3 && p[0] == Math.Floor(p[0]) && p[1] == Math.Floor(p[1]);
         }
 
         private void PolygonClick(V2 sp, Point screen)
@@ -995,6 +1140,7 @@ namespace UltraPuckMapMaker
         public bool CancelDrag()
         {
             if (_dragging || _arcBending || _poly.Count > 0) { CancelPending(); Capture = false; return true; }
+            if (_painting) { _painting = false; _paintShape = null; Capture = false; _ed.Revert(); return true; }
             if (_moving) { _moving = false; Capture = false; _ed.Revert(); return true; }
             if (_handle != null) { _handle = null; Capture = false; _ed.Revert(); return true; }
             return false;

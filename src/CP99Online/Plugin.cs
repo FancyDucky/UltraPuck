@@ -14,12 +14,13 @@ namespace CP99Online
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "cp99.online";
-        public const string Version = "0.9.0";
+        public const string Version = "0.9.1";
 
         internal static ManualLogSource Logger_;
         internal static ConfigEntry<bool> NoBoostSlowdown;
         internal static ConfigEntry<KeyCode> MenuKey;
         internal static ConfigEntry<bool> OpenMenuOnStart;
+        internal static ConfigEntry<bool> SkipIntro;
         internal static ConfigEntry<int> FrameRateLimit;
         internal static ConfigEntry<string> PlayerName;
         internal static ConfigEntry<int> OnlineTeam;
@@ -54,6 +55,8 @@ namespace CP99Online
             LastAddress = Config.Bind("Online", "LastAddress", "127.0.0.1", "Last address joined by direct IP.");
             OnlineController = Config.Bind("Online", "Controller", ControllerChoice.KeyboardMouse,
                 "What you play with when you join someone else's game.");
+            SkipIntro = Config.Bind("General", "SkipIntro", true,
+                "Start straight at the main menu: no logo, no \"Press A to Begin\" title screen and no language picker (turn off to change the language).");
             OpenMenuOnStart = Config.Bind("Debug", "OpenMenuOnStart", false,
                 "Open the mod menu as soon as the game starts (used for testing).");
             AutoUpdate = Config.Bind("General", "AutoUpdate", true,
@@ -96,6 +99,7 @@ namespace CP99Online
             gameObject.AddComponent<Rounds.StunBarView>();
             gameObject.AddComponent<TestHarness>();
             gameObject.AddComponent<Maps.MapTest>();
+            gameObject.AddComponent<Patches.IntroSkip>();
             SceneDump.Dir = Path.GetDirectoryName(Info.Location);
             gameObject.AddComponent<SceneDump>();
             gameObject.AddComponent<MenuTest>();

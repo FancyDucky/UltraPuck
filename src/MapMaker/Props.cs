@@ -51,6 +51,7 @@ namespace UltraPuckMapMaker
                 case ShapeKind.Rect: return new RectProps(s);
                 case ShapeKind.Circle: return new CircleProps(s);
                 case ShapeKind.Arc: return new ArcProps(s);
+                case ShapeKind.Tiles: return new TilesProps(s);
                 default: return new PolyProps(s);
             }
         }
@@ -113,6 +114,13 @@ namespace UltraPuckMapMaker
         [Category("Arc"), Description("Width of the band.")] public float Thickness { get { return S.P[5]; } set { S.P[5] = Math.Max(0.05f, value); } }
     }
 
+    internal sealed class TilesProps : ShapeProps
+    {
+        public TilesProps(MapShape s) : base(s) { }
+        [Category("Tiles"), Description("Painted with the Tile shape, one square at a time. Select and drag to move them all.")]
+        public int Count { get { return S.P.Length / 3; } }
+    }
+
     internal sealed class PolyProps : ShapeProps
     {
         public PolyProps(MapShape s) : base(s) { }
@@ -135,18 +143,39 @@ namespace UltraPuckMapMaker
         }
     }
 
-    internal sealed class ObjectProps
+    internal class ObjectProps
     {
-        private readonly MapObject _o;
-        public ObjectProps(MapObject o) { _o = o; }
+        protected readonly MapObject O;
+        protected ObjectProps(MapObject o) { O = o; }
+
+        /// <summary>The panel for an object: goals and spawns have a team, boosts a power.</summary>
+        public static ObjectProps For(MapObject o)
+        {
+            if (o.Kind == ObjKind.Goal || o.Kind == ObjKind.Spawn) return new TeamObjectProps(o);
+            if (o.Kind == ObjKind.Boost) return new BoostProps(o);
+            return new ObjectProps(o);
+        }
 
         [Category("Object"), Description("What this is.")]
-        public string Kind { get { return Editor.Describe(_o); } }
+        public string Kind { get { return Editor.Describe(O); } }
 
-        [Category("Object"), Description("Which team it belongs to (goals and spawns). Red defends the red goal.")]
-        public Team Team { get { return _o.Team == 2 ? Team.Blue : Team.Red; } set { _o.Team = (int)value; } }
+        [Category("Position")] public float X { get { return O.X; } set { O.X = value; } }
+        [Category("Position")] public float Y { get { return O.Y; } set { O.Y = value; } }
+    }
 
-        [Category("Position")] public float X { get { return _o.X; } set { _o.X = value; } }
-        [Category("Position")] public float Y { get { return _o.Y; } set { _o.Y = value; } }
+    internal sealed class TeamObjectProps : ObjectProps
+    {
+        public TeamObjectProps(MapObject o) : base(o) { }
+
+        [Category("Object"), Description("Which team it belongs to. Red defends the red goal.")]
+        public Team Team { get { return O.Team == 2 ? Team.Blue : Team.Red; } set { O.Team = (int)value; } }
+    }
+
+    internal sealed class BoostProps : ObjectProps
+    {
+        public BoostProps(MapObject o) : base(o) { }
+
+        [Category("Object"), DisplayName("Power (%)"), Description("How hard it launches you, in % of the game's normal boost pad (100). 0 to 500.")]
+        public float Power { get { return O.Power; } set { O.Power = Math.Max(0f, Math.Min(500f, value)); } }
     }
 }

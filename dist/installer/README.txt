@@ -1,5 +1,5 @@
 UltraPuck {VERSION} - mod for ClusterPuck 99
-Online play for ClusterPuck 99, plus a mod manager with built-in mods (FPS+, Smooth Motion, Better Boost, Dash Meter, Rounds Mode).
+Online play for ClusterPuck 99, plus a mod manager with built-in mods (FPS+, Smooth Motion, Better Boost, Dash Meter, Charge Zoom, Rounds Mode).
 
 START HERE: open the folder for your computer.
   Windows               -> Windows folder
@@ -53,8 +53,12 @@ PLAY ONLINE
 MODS
   Main menu > Mods lists every mod. Select one to turn it on or off and change its settings.
   Built in: FPS+ (raise the 60 FPS cap), Smooth Motion (players and name tags move smoothly
-  instead of jittering), Better Boost (no slowdown after boosting) and Dash Meter (a small bar
-  above each player shows when their dash is ready, one segment per charge).
+  instead of jittering), Better Boost (no slowdown after boosting), Dash Meter (a small bar
+  above each player shows when their dash is ready, one segment per charge) and Charge Zoom (while
+  you charge a shot, the camera pulls back until the goal you're aiming at is in view; Max Zoom
+  Out caps it, 250% by default, and Over Charge doesn't add more).
+  The game now starts straight at the main menu (no logo or "Press A" screen). To pick another
+  language, set SkipIntro = false in BepInEx\config\cp99.online.cfg.
   Rounds Mode (off by default): after each goal everyone picks a card that powers them up for the
   rest of the match. Pick with the stick or arrow keys and A / Space / Enter, or click a card.
   Settings: each player picks, or each team votes for one card; cards offered; pick time;
@@ -69,10 +73,10 @@ CUSTOM MAPS
   (Curve Rink comes as an example). Online, everyone gets the host's map automatically when the
   match loads, and bots can play on custom maps.
   Make your own with UltraPuck Map Maker (Windows): it's installed in the game folder, in
-  "UltraPuck Map Maker". Draw floors, walls and holes as rectangles (square or rounded), circles,
-  curved arcs or polygons, resize them with handles, place goals, spawns, boosts, bumpers and
+  "UltraPuck Map Maker". Paint floors, walls and holes tile by tile (square or diagonal), or draw
+  rectangles (square or rounded), circles, curved arcs or polygons, resize them with handles, place goals, spawns, boosts, bumpers and
   spikes, mirror halves, and save. Press Test in game (F5) to play it right away: it starts
-  the game, or loads the map in the game that's already open. Help > How to use explains it.
+  the game, or loads the map in the game that's already open. Help > Controls (F1) lists every control.
   Maps made in the game's own Arena Creator still work, online too, and the map maker can open
   them (File > Open an Arena Creator map).
 

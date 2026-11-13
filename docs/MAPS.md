@@ -23,13 +23,18 @@ A Windows app for making maps, installed with UltraPuck in the game folder as
 the map looks the same in the app as in the game.
 
 - **Drawing.** Floor (F), Wall (W), Hole (H) and Remove wall (E). Pick a colour and a shape:
+  - Tile (T, the default): click or drag to paint single tiles, like the game's Arena Creator. Pick a full square or
+    a corner triangle on the second toolbar row (Q turns the triangle). Shift+drag fills an area of whole tiles;
+    Ctrl+drag fills an area with the opposite: floor and hole swap, so do wall and remove wall.
   - Rectangle (R): drag corner to corner, with optional rounded corners.
   - Circle (C): drag from the centre out.
   - Arc (A): drag from one end to the other, move the mouse to bend it, click. Its width is in the toolbar.
-  - Polygon (P): click each corner, then the first corner again (or Enter). Backspace takes back a corner.
+  - Polygon (P): click each corner, then the first corner again (or Space). Backspace takes back a corner.
+  - Hold Ctrl with any shape to draw the opposite (a hole instead of floor, and so on).
 
   Snapping is to half a tile by default; hold Alt to place freely.
-- **Objects.** Click to place goals, spawns, boosts, bumpers and spikes.
+- **Objects.** Click to place goals, spawns, boosts, bumpers and spikes. A selected boost's Power sets how hard it
+  launches you (100% is the game's normal pad).
 - **Select (V).** Click to select, drag to move, arrow keys nudge, Del deletes and Ctrl+D copies. The Properties panel
   edits exact numbers. Click empty space to get the map's name, tagline, players, difficulty and background.
 - **Handles.** A selected shape has handles to resize it. The round handle rounds a rectangle's corners or sets an
@@ -38,6 +43,8 @@ the map looks the same in the app as in the game.
 - **Paint order.** The list on the right is the paint order; Earlier / Later (`[` / `]`) change it.
 - **Mirror.** Left onto right, right onto left, bottom onto top, top onto bottom, or the bottom-left quarter onto all
   four. Red and blue goals and spawns swap across the line between the teams.
+- **Controls (F1).** Help > Controls, or the ? Controls button, opens a list of every control, grouped by what you're
+  doing.
 - **Undo and checks.** Ctrl+Z / Ctrl+Y undo and redo. Before saving, the app warns about a missing goal or spawn,
   objects off the floor and the like.
 - **Files.** Save goes to `UltraPuck Maps`. File > Open an Arena Creator map imports the game's old maps.
@@ -45,7 +52,9 @@ the map looks the same in the app as in the game.
   (skipping the intro), or loads the map in the game that's already running, from the menus or a match. It's an
   endless practice match on the map; pause to leave. Edit and press F5 again to reload it. The arrow next to the
   button picks the controls (a controller if one is plugged in, keyboard, or controller) and bots (none, 1 against 1,
-  2 against 2 or 3 against 3). It doesn't work during an online game.
+  2 against 2 or 3 against 3). It doesn't work during an online game. The game starts through Steam, so Steam Input
+  works (PlayStation and other pads), and plays with one controller: the last one you pressed a button on, else an
+  Xbox-style one (Steam's copy of a PlayStation pad), else the first.
 
   How it works: the map maker writes the map and `Testing/request.txt` (`map <path>`, `controls auto|keyboard|controller`,
   `bots <n>`); UltraPuck checks for that file twice a second, deletes it and starts the match.
@@ -118,6 +127,7 @@ Colours are the Arena Creator's 12: 0 white, 1 light grey, 2 dark grey, 3 black,
 | `circle x y r` | A circle. |
 | `poly x1 y1 x2 y2 x3 y3 ...` | A polygon, 3 or more corners. |
 | `arc x y r start end thickness` | A band `thickness` wide along a circle of radius `r`, counter-clockwise from angle `start` to `end`, with round ends. Use 0 360 for a full ring. |
+| `tiles x y s x y s ...` | Single tiles: each `x y s` is the 1 x 1 square from (x, y) to (x + 1, y + 1). `s` is 0 for the whole square, or the corner triangle with the right angle at 1 bottom left, 2 bottom right, 3 top right, 4 top left. |
 
 ### Objects
 
@@ -125,7 +135,7 @@ Colours are the Arena Creator's 12: 0 white, 1 light grey, 2 dark grey, 3 black,
 | --- | --- |
 | `goal <team> x y` | A goal; team 1 (red by default) defends the team 1 goal. |
 | `spawn <team> x y` | Where that team's players start. Without one, a team starts in the middle. |
-| `boost x y` | Speed boost pad. |
+| `boost x y [power p]` | Speed boost pad; `power` is how hard it launches you, in % of the game's own pad (default 100). |
 | `bumper x y` | Bumper. |
 | `spike x y` | Spikes. |
 
@@ -150,8 +160,9 @@ crossings refined on the exact shapes and sharp corners rebuilt, so straight edg
 square. From that it makes:
 
 - the mesh, in the Arena Creator's materials;
-- edge colliders for walls (what players and the puck bounce off);
+- one solid polygon collider for the walls (what players and the puck bounce off; anything pushed into a wall is
+  pushed back out the nearest side);
 - an edge collider for the floor's border (the forcefield that keeps the puck in);
-- box colliders filling walls, the ground and a 2-tile forcefield ring.
+- box colliders filling the ground and a 2-tile forcefield ring.
 
 The code is in `src/CP99Online/Maps`. `MapData.cs` and `MapGeometry.cs` are plain C#, shared with the map maker.

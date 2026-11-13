@@ -18,6 +18,7 @@ namespace UltraPuckMapMaker
         private readonly ToolStripStatusLabel _hint = new ToolStripStatusLabel { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
         private readonly Dictionary<Tool, ToolStripButton> _toolButtons = new Dictionary<Tool, ToolStripButton>();
         private readonly Dictionary<ShapeMode, ToolStripButton> _modeButtons = new Dictionary<ShapeMode, ToolStripButton>();
+        private readonly Dictionary<TileShape, ToolStripButton> _tileButtons = new Dictionary<TileShape, ToolStripButton>();
         private readonly ToolStripButton[] _swatches = new ToolStripButton[MapData.Colors];
         private ToolStripMenuItem _undoItem, _redoItem;
         private bool _syncing;
@@ -146,6 +147,22 @@ namespace UltraPuckMapMaker
                     _testControls = tv[0]; _testBots = int.Parse(tv[1]);
                     TestInGame(false);
                 }
+                else if (a == "mods") _canvas.SimMods = v == "shift" ? Keys.Shift : v == "ctrl" ? Keys.Control : Keys.None;
+                else if (a == "tileshape") _ed.SetTileShape((TileShape)int.Parse(v));
+                else if (a == "controlsshot")
+                {
+                    // a picture of the Controls window, opened off-screen
+                    using (var f = new ControlsForm { StartPosition = FormStartPosition.Manual, Location = new Point(-20000, -20000) })
+                    {
+                        f.Show();
+                        Application.DoEvents();
+                        using (var bmp = new Bitmap(f.Width, f.Height))
+                        {
+                            f.DrawToBitmap(bmp, new Rectangle(0, 0, f.Width, f.Height));
+                            bmp.Save(v, System.Drawing.Imaging.ImageFormat.Png);
+                        }
+                    }
+                }
                 else if (a == "width") _ed.Thickness = float.Parse(v, System.Globalization.CultureInfo.InvariantCulture);
                 else if (a == "arc")
                 {
@@ -254,7 +271,7 @@ namespace UltraPuckMapMaker
             view.DropDownItems.Add(Item("Zoom to &fit", Keys.None, _canvas.ZoomToFit, "Home"));
 
             var help = new ToolStripMenuItem("&Help");
-            help.DropDownItems.Add(Item("&How to use", Keys.F1, ShowHelp));
+            help.DropDownItems.Add(Item("&Controls", Keys.F1, ShowControls));
 
             menu.Items.AddRange(new ToolStripItem[] { file, edit, mirror, view, help });
             return menu;
@@ -280,10 +297,11 @@ namespace UltraPuckMapMaker
             ts.Items.Add(ToolButton(Tool.Unwall, "Remove wall", "E", "Drag to remove walls but keep the floor."));
             ts.Items.Add(new ToolStripSeparator());
             ts.Items.Add(new ToolStripLabel("Shape:"));
+            ts.Items.Add(ModeButton(ShapeMode.Tile, "Tile", "T", "Click or drag to paint single tiles (square or diagonal: pick below, Q turns it). Shift+drag fills an area, Ctrl+drag the opposite (hole / remove wall)."));
             ts.Items.Add(ModeButton(ShapeMode.Rectangle, "Rectangle", "R", "Drag from corner to corner."));
             ts.Items.Add(ModeButton(ShapeMode.Circle, "Circle", "C", "Drag from the centre outwards."));
             ts.Items.Add(ModeButton(ShapeMode.Arc, "Arc", "A", "A curved band: drag from one end to the other, then move the mouse to bend it and click."));
-            ts.Items.Add(ModeButton(ShapeMode.Polygon, "Polygon", "P", "Click each corner; click the first corner (or press Enter) to finish. Backspace takes back a corner."));
+            ts.Items.Add(ModeButton(ShapeMode.Polygon, "Polygon", "P", "Click each corner; click the first corner (or press Space) to finish. Backspace takes back a corner."));
             ts.Items.Add(new ToolStripLabel("  Rounded corners:"));
             var corner = new NumericUpDown { Width = 56, DecimalPlaces = 2, Increment = 0.5m, Minimum = 0, Maximum = 50 };
             corner.ValueChanged += (s, e) => _ed.Corner = (float)corner.Value;
@@ -390,6 +408,21 @@ namespace UltraPuckMapMaker
                 _swatches[c] = b;
                 ts.Items.Add(b);
             }
+            ts.Items.Add(new ToolStripSeparator());
+            ts.Items.Add(new ToolStripLabel("Tile:"));
+            var tileNames = new[] { "Full square", "Triangle, bottom left", "Triangle, bottom right", "Triangle, top right", "Triangle, top left" };
+            for (var i = 0; i < 5; i++)
+            {
+                var t = (TileShape)i;
+                var b = new ToolStripButton { DisplayStyle = ToolStripItemDisplayStyle.Image, Image = TileIcon(t), ToolTipText = tileNames[i] + " (Q turns the triangle)" };
+                b.Click += (s, e) => { _ed.SetTileShape(t); if (_ed.Mode != ShapeMode.Tile) _ed.SetMode(ShapeMode.Tile); };
+                _tileButtons[t] = b;
+                ts.Items.Add(b);
+            }
+            ts.Items.Add(new ToolStripSeparator());
+            var controls = new ToolStripButton("? Controls") { ToolTipText = "Every control in one list (F1)." };
+            controls.Click += (s, e) => ShowControls();
+            ts.Items.Add(controls);
             return ts;
         }
 
@@ -418,6 +451,29 @@ namespace UltraPuckMapMaker
                 g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                 if (square) { g.FillRectangle(b, 1, 1, 14, 14); g.DrawRectangle(Pens.DimGray, 1, 1, 13, 13); }
                 else g.FillEllipse(b, 1, 1, 14, 14);
+            }
+            return bmp;
+        }
+
+        private static Image TileIcon(TileShape t)
+        {
+            var bmp = new Bitmap(16, 16);
+            using (var g = Graphics.FromImage(bmp))
+            using (var b = new SolidBrush(Color.FromArgb(90, 90, 96)))
+            {
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                Point a = new Point(2, 14), r = new Point(14, 14), tr = new Point(14, 2), tl = new Point(2, 2);
+                Point[] pts;
+                switch (t)
+                {
+                    case TileShape.BottomLeft: pts = new[] { a, r, tl }; break;
+                    case TileShape.BottomRight: pts = new[] { a, r, tr }; break;
+                    case TileShape.TopRight: pts = new[] { r, tr, tl }; break;
+                    case TileShape.TopLeft: pts = new[] { a, tr, tl }; break;
+                    default: pts = new[] { a, r, tr, tl }; break;
+                }
+                g.FillPolygon(b, pts);
+                g.DrawRectangle(Pens.DarkGray, 2, 2, 12, 12);
             }
             return bmp;
         }
@@ -474,7 +530,7 @@ namespace UltraPuckMapMaker
             _syncing = false;
             var sel = _ed.Selected;
             if (sel is MapShape) _props.SelectedObject = ShapeProps.For((MapShape)sel);
-            else if (sel is MapObject) _props.SelectedObject = new ObjectProps((MapObject)sel);
+            else if (sel is MapObject) _props.SelectedObject = ObjectProps.For((MapObject)sel);
             else _props.SelectedObject = new MapProps(_ed.Map);
             UpdateHint();
             _canvas.Invalidate();
@@ -484,6 +540,7 @@ namespace UltraPuckMapMaker
         {
             foreach (var kv in _toolButtons) kv.Value.Checked = kv.Key == _ed.Tool;
             foreach (var kv in _modeButtons) kv.Value.Checked = kv.Key == _ed.Mode;
+            foreach (var kv in _tileButtons) kv.Value.Checked = kv.Key == _ed.TileShape;
             for (var c = 0; c < _swatches.Length; c++) _swatches[c].Checked = c == _ed.Color;
             UpdateHint();
         }
@@ -511,10 +568,12 @@ namespace UltraPuckMapMaker
                     {
                         case ShapeMode.Circle: h = "Drag from the centre out."; break;
                         case ShapeMode.Arc: h = "Drag from one end to the other, then move the mouse to bend it and click. Width is in the toolbar."; break;
-                        case ShapeMode.Polygon: h = "Click each corner. Click the first corner or press Enter to finish; Backspace takes one back, Esc cancels."; break;
+                        case ShapeMode.Polygon: h = "Click each corner. Click the first corner or press Space to finish; Backspace takes one back, Esc cancels."; break;
+                        case ShapeMode.Tile: h = "Click or drag to paint tiles (Q turns diagonals). Shift+drag: an area. Ctrl+drag: an area of " + (_ed.Tool == Tool.Floor ? "hole" : _ed.Tool == Tool.Hole ? "floor" : _ed.Tool == Tool.Wall ? "remove wall" : "wall") + "."; break;
                         default: h = "Drag from corner to corner."; break;
                     }
-                    h += " Alt: no snapping. Right-drag pans, wheel zooms.";
+                    if (_ed.Mode != ShapeMode.Tile) h += " Ctrl: " + (_ed.Tool == Tool.Floor ? "hole" : _ed.Tool == Tool.Hole ? "floor" : _ed.Tool == Tool.Wall ? "remove wall" : "wall") + " instead. Alt: no snapping.";
+                    h += " Right-drag pans, wheel zooms.";
                     break;
                 default: h = "Click to place. Right-drag pans, wheel zooms."; break;
             }
@@ -547,7 +606,12 @@ namespace UltraPuckMapMaker
                     case Keys.C: _ed.SetMode(ShapeMode.Circle); return true;
                     case Keys.A: _ed.SetMode(ShapeMode.Arc); return true;
                     case Keys.P: _ed.SetMode(ShapeMode.Polygon); return true;
-                    case Keys.Enter: if (_canvas.FinishPending()) return true; break;
+                    case Keys.T: _ed.SetMode(ShapeMode.Tile); return true;
+                    case Keys.Q:
+                        _ed.SetTileShape(_ed.TileShape == TileShape.TopLeft ? TileShape.Full : (TileShape)((int)_ed.TileShape + 1));
+                        if (_ed.Mode != ShapeMode.Tile) _ed.SetMode(ShapeMode.Tile);
+                        return true;
+                    case Keys.Space: if (_canvas.FinishPending()) return true; break;
                     case Keys.Back: if (_canvas.RemoveLastPoint()) return true; break;
                     case Keys.Delete: _ed.DeleteSelected(); return true;
                     case Keys.OemOpenBrackets: _ed.Reorder(-1); return true;
@@ -657,35 +721,14 @@ namespace UltraPuckMapMaker
             }
         }
 
-        private void ShowHelp()
+        private ControlsForm _controls;
+
+        /// <summary>Help > Controls (F1): every control in one list. Stays open beside the map if you like.</summary>
+        private void ShowControls()
         {
-            MessageBox.Show(this,
-                "Drawing\n" +
-                "  Pick Floor (F), Wall (W), Hole (H) or Remove wall (E), a colour and a shape, then draw on the map:\n" +
-                "    Rectangle (R): drag corner to corner (Rounded corners in the toolbar). Circle (C): drag from the centre out.\n" +
-                "    Arc (A): drag from one end to the other, move the mouse to bend it, click. Arc width is in the toolbar.\n" +
-                "    Polygon (P): click each corner, then the first corner again (or Enter). Backspace takes back a corner.\n" +
-                "  Shapes paint over the ones before them. The list on the right is the paint order: Earlier / Later ( [ ] ) changes it.\n" +
-                "  Walls always have floor under them. A hole removes floor, walls and any objects in it.\n\n" +
-                "Objects\n" +
-                "  Click to place goals, spawns, boosts, bumpers and spikes. Red defends the red goal.\n\n" +
-                "Selecting\n" +
-                "  Select (V): click a shape or object, drag to move, arrow keys nudge, Del deletes, Ctrl+D copies.\n" +
-                "  A selected shape has handles: drag them to resize. Round handles set a rectangle's rounding and an arc's width;\n" +
-                "  an arc's middle handle bends it. On a polygon, drag the dot on a side to add a corner; double-click a corner to remove it.\n" +
-                "  Exact numbers are in the Properties panel. Click empty space (or Esc) for the map's name and settings.\n\n" +
-                "Mirror\n" +
-                "  Copies one half onto the other, mirrored, around the dashed lines. Red and blue goals and spawns swap sides.\n\n" +
-                "View\n" +
-                "  Right or middle drag pans, the wheel zooms, Home fits the map. Snapping is 0.5 tiles; hold Alt for none.\n\n" +
-                "Testing it\n" +
-                "  Test in game (F5) plays the map in ClusterPuck 99 right away: it starts the game, or loads the map in the running game.\n" +
-                "  It's an endless practice match; pause to leave. Edit, press F5 again and the game reloads it.\n" +
-                "  The arrow next to the button picks keyboard or controller and how many bots.\n\n" +
-                "Playing it\n" +
-                "  Save into the maps folder (" + Paths.MapsFolder + ").\n" +
-                "  In the game it's in the arena list under Custom. Online, everyone gets it when the match loads.",
-                "How to use", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            if (_controls != null && !_controls.IsDisposed) { _controls.Activate(); return; }
+            _controls = new ControlsForm();
+            _controls.Show(this);
         }
     }
 }

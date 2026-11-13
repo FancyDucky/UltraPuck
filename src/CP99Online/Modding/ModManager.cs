@@ -69,7 +69,7 @@ namespace UltraPuck
         internal static void LoadAll(GameObject host)
         {
             _config = new ConfigFile(Path.Combine(Paths.ConfigPath, "ultrapuck.mods.cfg"), true);
-            var builtins = new UltraMod[] { new FpsPlus(), new SmoothMotion(), new BetterBoost(), new DashMeter(), new RoundsMode() };
+            var builtins = new UltraMod[] { new FpsPlus(), new SmoothMotion(), new BetterBoost(), new DashMeter(), new ChargeZoom(), new RoundsMode() };
             foreach (var b in builtins) b.Builtin = true;
             _mods.InsertRange(0, builtins.Where(b => _mods.All(m => m.Id != b.Id)));
 

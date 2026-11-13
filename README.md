@@ -6,8 +6,12 @@ A mod for [ClusterPuck 99](https://store.steampowered.com/app/337960/) that adds
   Everyone shares the real player select screen (own profile, team) and watches the host pick the arena and mode.
 - **Mod manager**: Main menu > Mods lists every mod. Select one to turn it on or off and change its settings.
   Built-in mods: **FPS+** (60 / 120 / 144 / 240 / unlimited), **Smooth Motion** (no jittery players and name tags),
-  **Better Boost** (no slowdown after boosting) and **Dash Meter** (a small bar above each player shows when their dash is
-  ready, one segment per charge).
+  **Better Boost** (no slowdown after boosting), **Dash Meter** (a small bar above each player shows when their dash is
+  ready, one segment per charge) and **Charge Zoom** (while you charge a shot, the camera pulls back until the goal
+  you're aiming at is in view, capped by Max Zoom Out, 250% by default; charging past full with Over Charge doesn't zoom
+  further).
+- **Straight to the main menu**: no logo or "Press A to Begin" screen (`SkipIntro` in `cp99.online.cfg` turns it off,
+  for example to pick another language).
 - **Rounds Mode** (built-in mod, off by default): after each goal everyone picks one of a few random cards that
   power them up for the rest of the match (Double Dash, Speed Up, Power Shot, ...). Online, each player sees only
   their own cards; everyone's cards show in the lower-left corner (hover for details). Setting: each player picks,
