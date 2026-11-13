@@ -25,6 +25,23 @@ namespace CP99Online.Rounds
         {
             public float Start, Until;
             public readonly HashSet<Renderer> Off = new HashSet<Renderer>();
+            public readonly Dictionary<Renderer, Material[]> Orig = new Dictionary<Renderer, Material[]>(); // see-through
+            public TextMesh Tag; public Color TagColor;
+        }
+
+        private const float SeeThroughAlpha = 0.35f;
+        private static readonly Dictionary<Material, Material> _ghostMats = new Dictionary<Material, Material>();
+        private static Shader _ghostShader;
+        private static bool _shaderLogged;
+
+        /// <summary>Every PC: when this ball last turned invisible (for the cooldown bar).</summary>
+        private static readonly Dictionary<BallData, float> _startedAt = new Dictionary<BallData, float>();
+
+        /// <summary>Cooldown left after this ball last turned invisible (0 = ready / never used).</summary>
+        internal static float CooldownLeft(BallData b)
+        {
+            float t;
+            return b != null && _startedAt.TryGetValue(b, out t) ? Mathf.Max(0f, t + Cooldown - Time.time) : 0f;
         }
 
         private static readonly Dictionary<BallData, State> _active = new Dictionary<BallData, State>();
@@ -32,12 +49,13 @@ namespace CP99Online.Rounds
 
         internal static void Clear()
         {
-            foreach (var kv in _active) Show(kv.Value);
+            foreach (var kv in _active) End(kv.Value);
             _active.Clear();
             _ready.Clear();
+            _startedAt.Clear();
         }
 
-        private void OnLevelWasLoaded(int level) { _active.Clear(); _ready.Clear(); InvisibilityBrakePatch.Reset(); }
+        private void OnLevelWasLoaded(int level) { _active.Clear(); _ready.Clear(); _startedAt.Clear(); _ghostMats.Clear(); InvisibilityBrakePatch.Reset(); }
 
         /// <summary>Host / offline: this ball just started braking.</summary>
         internal static void OnBrake(BallData b)
@@ -61,8 +79,9 @@ namespace CP99Online.Rounds
         {
             if (b == null) return;
             State s;
-            if (_active.TryGetValue(b, out s)) Show(s);
+            if (_active.TryGetValue(b, out s)) End(s);
             _active[b] = new State { Start = Time.time, Until = Time.time + seconds };
+            _startedAt[b] = Time.time;
         }
 
         /// <summary>Seconds of invisibility left (every PC).</summary>
@@ -128,7 +147,7 @@ namespace CP99Online.Rounds
             {
                 var b = kv.Key; var s = kv.Value;
                 if (b == null) { _active.Remove(b); continue; }
-                if (Time.time >= s.Until || !b.alive) { Show(s); _active.Remove(b); continue; }
+                if (Time.time >= s.Until || !b.alive) { End(s); _active.Remove(b); continue; }
                 var t = Time.time - s.Start;
                 bool visible;
                 switch (replay ? View.Seen : ViewOf(b, mine))
@@ -141,6 +160,7 @@ namespace CP99Online.Rounds
                         break;
                 }
                 if (visible) Show(s); else Hide(b, s);
+                if (!replay && ViewOf(b, mine) == View.Seen) SeeThrough(b, s); else if (s.Orig.Count > 0 || s.Tag != null) Solid(s);
             }
         }
 
@@ -160,6 +180,87 @@ namespace CP99Online.Rounds
         {
             foreach (var r in s.Off) if (r != null) r.enabled = true;
             s.Off.Clear();
+        }
+
+        private static void End(State s) { Show(s); Solid(s); }
+
+        /// <summary>You and your teammates see the invisible player as see-through (transparent copies of its materials).</summary>
+        private static void SeeThrough(BallData b, State s)
+        {
+            foreach (var r in b.GetComponentsInChildren<Renderer>())
+            {
+                if (s.Orig.ContainsKey(r) || !(r is MeshRenderer || r is SkinnedMeshRenderer) || r.GetComponent<TextMesh>() != null) continue;
+                var mats = r.sharedMaterials;
+                s.Orig[r] = mats;
+                var ghost = new Material[mats.Length];
+                for (var i = 0; i < mats.Length; i++) ghost[i] = Ghost(mats[i]);
+                r.sharedMaterials = ghost;
+            }
+            var tag = b.GetComponent<BallNameTag>();
+            if (s.Tag == null && tag != null && tag.nameTag != null)
+            {
+                s.Tag = tag.nameTag; s.TagColor = s.Tag.color;
+                var c = s.TagColor; c.a *= 0.5f; s.Tag.color = c;
+            }
+        }
+
+        private static void Solid(State s)
+        {
+            foreach (var kv in s.Orig) if (kv.Key != null) kv.Key.sharedMaterials = kv.Value;
+            s.Orig.Clear();
+            if (s.Tag != null) s.Tag.color = s.TagColor;
+            s.Tag = null;
+        }
+
+        private static Material Ghost(Material m)
+        {
+            if (m == null) return null;
+            Material g;
+            if (_ghostMats.TryGetValue(m, out g) && g != null) return g;
+            if (_ghostShader == null)
+                _ghostShader = Shader.Find("Legacy Shaders/Transparent/Diffuse") ?? Shader.Find("Transparent/Diffuse") ?? Shader.Find("Sprites/Default");
+            if (_ghostShader == null) return m;
+            if (!_shaderLogged) { _shaderLogged = true; NetLog.Info("Invisibility: see-through shader " + _ghostShader.name); }
+            g = new Material(_ghostShader) { name = m.name + " (see-through)" };
+            if (m.HasProperty("_MainTex") && g.HasProperty("_MainTex")) g.mainTexture = m.mainTexture;
+            var c = m.HasProperty("_Color") ? m.color : Color.white;
+            c.a = SeeThroughAlpha;
+            if (g.HasProperty("_Color")) g.color = c;
+            g.renderQueue = 3000;
+            _ghostMats[m] = g;
+            return g;
+        }
+    }
+
+    /// <summary>A light blue bar under a player who used Invisibility, filling back up over the cooldown (every PC).</summary>
+    internal sealed class InvisibilityBarView : MonoBehaviour
+    {
+        private static readonly Color Filling = new Color(0.55f, 0.78f, 1f, 0.85f);
+        private static readonly Color Ready = new Color(0.7f, 0.88f, 1f, 1f);
+        private readonly UltraPuck.PlayerBars _bars = new UltraPuck.PlayerBars("InvisibilityBar");
+        private readonly HashSet<BallData> _active = new HashSet<BallData>(); // still fading out after the cooldown ended
+
+        private void OnLevelWasLoaded(int level) { _bars.Clear(); _active.Clear(); }
+
+        private void LateUpdate()
+        {
+            var gm = Globals.gameManager;
+            if (gm == null || gm.teams == null) { if (_bars.Count > 0) _bars.Clear(); return; }
+            var seen = new HashSet<BallData>();
+            foreach (var team in gm.teams)
+                foreach (var b in team.members)
+                {
+                    if (b == null) continue;
+                    var left = Invisibility.CooldownLeft(b);
+                    if (left <= 0f && !_active.Contains(b)) continue;
+                    seen.Add(b);
+                    if (left > 0f) _active.Add(b);
+                    var visible = b.alive && !b.fallen && !gm.replayManager.replaying;
+                    var y = Stun.Remaining(b) > 0f ? -0.64f : -0.5f; // below the stun bar if both show
+                    _bars.For(b).Set(b, 1, 1f - left / Invisibility.Cooldown, visible, false, Filling, Ready, y, 0.78f, 0.09f);
+                }
+            _bars.Prune(seen);
+            _active.IntersectWith(seen);
         }
     }
 
