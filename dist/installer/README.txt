@@ -48,8 +48,6 @@ PLAY ONLINE
   team, just like local multiplayer. The host presses Start and picks the arena and mode while
   everyone watches. After the match everyone returns to player select together.
   One player per PC online; the host can also add couch players and AI bots.
-  Your own player moves the moment you press, even with a slow connection to the host: your PC
-  runs your player itself and quietly corrects it to match the host's game.
   "Host direct IP" also works but needs UDP port 27099 forwarded on the host's router.
 
 MODS

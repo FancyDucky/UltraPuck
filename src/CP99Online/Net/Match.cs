@@ -32,7 +32,6 @@ namespace CP99Online.Net
 
         public static void End()
         {
-            Prediction.Reset();
             Active = false;
             ClientPending = false;
             Balls = new BallData[0];

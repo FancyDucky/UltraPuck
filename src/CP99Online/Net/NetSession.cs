@@ -58,11 +58,6 @@ namespace CP99Online.Net
             }
         }
 
-        private void FixedUpdate()
-        {
-            if (_transport != null && Role == Role.Client) ClientFixedUpdate();
-        }
-
         private void LateUpdate()
         {
             if (_transport == null) return;
