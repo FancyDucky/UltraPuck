@@ -167,6 +167,7 @@ namespace UltraPuck
             AddPage("Toggle Cards", () => Cards.All.Select(c => ModSetting.Toggle(c.Name,
                 () => CardEnabled(c.Id), v => CardEntry(c.Id).Value = v, CardText.Plain(c.Description))).ToList<ModSetting>(),
                 "Choose which cards can be offered. Online, the host's choice applies.");
+            foreach (var c in Cards.All) CardEntry(c.Id); // every card's setting exists from the start (and default changes apply)
         }
 
         private readonly Dictionary<string, BepInEx.Configuration.ConfigEntry<bool>> _cardEntries = new Dictionary<string, BepInEx.Configuration.ConfigEntry<bool>>();
@@ -175,7 +176,17 @@ namespace UltraPuck
         {
             BepInEx.Configuration.ConfigEntry<bool> e;
             if (!_cardEntries.TryGetValue(id, out e))
-                _cardEntries[id] = e = Config.Bind(Section, "Card." + id, true, "Whether the card " + id + " can be offered.");
+            {
+                var card = Cards.All.FirstOrDefault(c => c.Id == id);
+                _cardEntries[id] = e = Config.Bind(Section, "Card." + id, card == null || card.OnByDefault, "Whether the card " + id + " can be offered.");
+                // Invisibility became off by default (0.9.6). Settings saved before that say on, so switch it off
+                // once; turning it back on afterwards sticks.
+                if (id == "ultrapuck.invisibility")
+                {
+                    var done = Config.Bind(Section, "Defaults.InvisibilityOff", false, "Invisibility was switched off once when it became off by default.");
+                    if (!done.Value) { e.Value = false; done.Value = true; }
+                }
+            }
             return e;
         }
 

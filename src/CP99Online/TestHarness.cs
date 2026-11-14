@@ -150,7 +150,9 @@ namespace CP99Online
                     NetLog.Info("TEST dash: " + seat.Name + " aims at " + target.Name + " (" + d.magnitude.ToString("F1") + " away)");
                 }
                 seat.Ball.GetComponent<BallShove>().Shove();
-                NetLog.Info("TEST dash press " + (_burstStep + 1) + ": gameTimer=" + seat.Ball.GetComponent<BallShove>().shoveTimer.ToString("F2"));
+                var hasGun = Rounds.CardEffects.AppliedOf(seat.Ball) != null && Rounds.CardEffects.AppliedOf(seat.Ball).Stats.PuckGun;
+                if (hasGun) Rounds.CardObjects.OnBrake(seat.Ball); // Puck Gun fires on brake now
+                NetLog.Info("TEST dash press " + (_burstStep + 1) + ": gameTimer=" + seat.Ball.GetComponent<BallShove>().shoveTimer.ToString("F2") + (hasGun ? ", brake (Puck Gun) cooldown " + Rounds.CardObjects.GunCooldownLeft(seat.Ball).ToString("F2") : string.Empty));
             }
             else NetLog.Info("TEST dash burst done");
             _burstStep++;

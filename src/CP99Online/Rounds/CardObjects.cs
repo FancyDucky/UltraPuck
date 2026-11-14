@@ -186,9 +186,38 @@ namespace CP99Online.Rounds
         private static readonly Dictionary<ushort, PuckGunShot> _shots = new Dictionary<ushort, PuckGunShot>();
         private static ushort _nextShot = 1;
 
-        /// <summary>Host / offline: a player with Puck Gun dashed.</summary>
+        /// <summary>Puck Gun's own cooldown (dash cards don't change it).</summary>
+        internal const float PuckGunCooldown = 2f;
+        private static readonly Dictionary<BallData, float> _gunFiredAt = new Dictionary<BallData, float>(); // every PC (cooldown bar)
+        private static readonly Dictionary<BallData, float> _gunReady = new Dictionary<BallData, float>();   // authority
+
+        internal static void ClearGun() { _gunFiredAt.Clear(); _gunReady.Clear(); }
+
+        /// <summary>Puck Gun cooldown left for this ball (0 = ready / never fired), on every PC.</summary>
+        internal static float GunCooldownLeft(BallData b)
+        {
+            float t;
+            return b != null && _gunFiredAt.TryGetValue(b, out t) ? Mathf.Max(0f, t + PuckGunCooldown - Time.time) : 0f;
+        }
+
+        /// <summary>Host / offline: this ball just started braking. With Puck Gun and the cooldown over, fire.</summary>
+        internal static void OnBrake(BallData b)
+        {
+            if (b == null || !CardGame.IsAuthority || !b.alive || b.fallen) return;
+            var gm = Globals.gameManager;
+            if (CardGame.PhaseActive || gm == null || gm.startCountdown > 0f || gm.roundOver || gm.replayManager.replaying) return;
+            var a = CardEffects.AppliedOf(b);
+            if (a == null || !a.Stats.PuckGun) return;
+            float next;
+            if (_gunReady.TryGetValue(b, out next) && Time.time < next) return;
+            _gunReady[b] = Time.time + PuckGunCooldown;
+            FirePuckGun(b);
+        }
+
+        /// <summary>Host / offline: a player with Puck Gun braked (see OnBrake).</summary>
         internal static void FirePuckGun(BallData b)
         {
+            _gunFiredAt[b] = Time.time;
             var dir = (Vector2)b.transform.up;
             var pos = (Vector2)b.transform.position + dir * (CardEffects.Radius(b.GetComponent<Collider2D>()) + ShotRadius + 0.05f);
             var id = _nextShot++;
@@ -201,6 +230,8 @@ namespace CP99Online.Rounds
         /// <summary>Client: the host fired a shot (visual only; the host decides what it hits).</summary>
         internal static void ClientShot(ushort id, int team, int slot, Vector2 pos, Vector2 vel)
         {
+            var shooter = Match.Ball(slot);
+            if (shooter != null) _gunFiredAt[shooter] = Time.time;
             Spawn(id, team, pos, vel, null, false);
         }
 

@@ -55,7 +55,7 @@ namespace CP99Online.Rounds
             _startedAt.Clear();
         }
 
-        private void OnLevelWasLoaded(int level) { _active.Clear(); _ready.Clear(); _startedAt.Clear(); _ghostMats.Clear(); InvisibilityBrakePatch.Reset(); }
+        private void OnLevelWasLoaded(int level) { _active.Clear(); _ready.Clear(); _startedAt.Clear(); _ghostMats.Clear(); InvisibilityBrakePatch.Reset(); CardObjects.ClearGun(); }
 
         /// <summary>Host / offline: this ball just started braking.</summary>
         internal static void OnBrake(BallData b)
@@ -235,7 +235,10 @@ namespace CP99Online.Rounds
         }
     }
 
-    /// <summary>A light blue bar under a player who used Invisibility, filling back up over the cooldown (every PC).</summary>
+    /// <summary>
+    /// A light blue bar under a player who used a brake ability (Invisibility or Puck Gun), filling back up over the
+    /// cooldown (every PC). With both, it shows whichever is further from ready.
+    /// </summary>
     internal sealed class InvisibilityBarView : MonoBehaviour
     {
         private static readonly Color Filling = new Color(0.55f, 0.78f, 1f, 0.85f);
@@ -254,20 +257,22 @@ namespace CP99Online.Rounds
                 foreach (var b in team.members)
                 {
                     if (b == null) continue;
-                    var left = Invisibility.CooldownLeft(b);
+                    var invis = Invisibility.CooldownLeft(b) / Invisibility.Cooldown;
+                    var gun = CardObjects.GunCooldownLeft(b) / CardObjects.PuckGunCooldown;
+                    var left = Mathf.Max(invis, gun); // share of the cooldown still to go
                     if (left <= 0f && !_active.Contains(b)) continue;
                     seen.Add(b);
                     if (left > 0f) _active.Add(b);
                     var visible = b.alive && !b.fallen && !gm.replayManager.replaying;
                     var y = Stun.Remaining(b) > 0f ? -0.64f : -0.5f; // below the stun bar if both show
-                    _bars.For(b).Set(b, 1, 1f - left / Invisibility.Cooldown, visible, false, Filling, Ready, y, 0.78f, 0.09f);
+                    _bars.For(b).Set(b, 1, 1f - left, visible, false, Filling, Ready, y, 0.78f, 0.09f);
                 }
             _bars.Prune(seen);
             _active.IntersectWith(seen);
         }
     }
 
-    /// <summary>Invisibility: notice when a player starts braking (BallSprint sets "sprinting" while the brake is held).</summary>
+    /// <summary>Brake abilities (Invisibility, Puck Gun): notice when a player starts braking (BallSprint sets "sprinting" while the brake is held).</summary>
     [HarmonyPatch(typeof(BallSprint), "Update")]
     internal static class InvisibilityBrakePatch
     {
@@ -280,7 +285,10 @@ namespace CP99Online.Rounds
             bool was;
             _was.TryGetValue(__instance, out was);
             _was[__instance] = ___sprinting;
-            if (___sprinting && !was) Invisibility.OnBrake(__instance.GetComponent<BallData>());
+            if (!___sprinting || was) return;
+            var b = __instance.GetComponent<BallData>();
+            Invisibility.OnBrake(b);
+            CardObjects.OnBrake(b);
         }
     }
 }

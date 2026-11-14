@@ -69,6 +69,9 @@ namespace UltraPuck
         /// <summary>How often the card is offered compared to others (1 = normal, 0.5 = half as often).</summary>
         public virtual float Rarity { get { return 1f; } }
 
+        /// <summary>Whether the card starts switched on in Mods > Rounds Mode > Toggle Cards.</summary>
+        public virtual bool OnByDefault { get { return true; } }
+
         /// <summary>Change the player's stats. Called once per copy of the card the player owns.</summary>
         public virtual void Apply(CardStats stats) { }
 
@@ -256,7 +259,7 @@ namespace UltraPuck
     {
         public override string Id { get { return "ultrapuck.puckgun"; } }
         public override string Name { get { return "Puck Gun"; } }
-        public override string Description { get { return "Every dash fires a shot. The first player it hits (teammates too) gets a " + CardText.Good("1 s Stun") + " and a small knockback. It also knocks the puck away."; } }
+        public override string Description { get { return "Brake to fire a shot (2 s cooldown). The first player it hits (teammates too) gets a " + CardText.Good("1 s Stun") + " and a small knockback. It also knocks the puck away."; } }
         public override Color Color { get { return new Color(0.80f, 0.20f, 0.25f); } }
         public override int MaxPerPlayer { get { return 1; } }
         public override void Apply(CardStats s) { s.PuckGun = true; }
@@ -269,6 +272,7 @@ namespace UltraPuck
         public override string Description { get { return "Brake to turn " + CardText.Good("invisible for 5 s") + ". Opponents can't see you; teammates still can. 12 s cooldown."; } }
         public override Color Color { get { return new Color(0.55f, 0.75f, 0.95f); } }
         public override int MaxPerPlayer { get { return 1; } }
+        public override bool OnByDefault { get { return false; } } // being reworked
         public override void Apply(CardStats s) { s.Invisibility = true; }
     }
 
