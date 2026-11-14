@@ -342,6 +342,66 @@ namespace CP99Online.Net
             if (_snapAccum < Proto.SendRate) return;
             _snapAccum = Mathf.Min(_snapAccum - Proto.SendRate, Proto.SendRate);
             SendSnapshot(gm);
+            SendOwnStates();
+        }
+
+        private static readonly HarmonyLib.AccessTools.FieldRef<BallSprint, SpeedAddition> SprintSlow =
+            HarmonyLib.AccessTools.FieldRefAccess<BallSprint, SpeedAddition>("sprintSpeed");
+        private static readonly HarmonyLib.AccessTools.FieldRef<BallHandling, SpeedAddition> ChargeSlow =
+            HarmonyLib.AccessTools.FieldRefAccess<BallHandling, SpeedAddition>("chargeSlower");
+
+        /// <summary>
+        /// To each client, about the ball it controls, for its prediction (see Prediction): where it is, the last
+        /// input of theirs that's been applied, and the stats its movement uses. The speed leaves out the brake and
+        /// charging slowdowns, which the client applies itself from its own buttons.
+        /// </summary>
+        private void SendOwnStates()
+        {
+            foreach (var ci in _clients.Values)
+            {
+                if (!ci.Loaded || ci.Conn == null) continue;
+                var home = -1;
+                foreach (var kv in NetInput.BySlot) if (kv.Value == ci.Input) { home = kv.Key; break; }
+                var homeBall = Match.Ball(home);
+                if (homeBall == null) continue;
+                var body = Possession.BodyOf(homeBall) ?? homeBall;
+                var slot = Match.Slot(body);
+                var rb = body.GetComponent<Rigidbody2D>();
+                if (slot < 0 || rb == null) continue;
+
+                var sprint = body.GetComponent<BallSprint>();
+                var handling = body.GetComponent<BallHandling>();
+                var skipA = sprint != null ? SprintSlow(sprint) : null;
+                var skipB = handling != null ? ChargeSlow(handling) : null;
+                var speed = body.baseSpeed;
+                if (body.additionalSpeed != null)
+                    foreach (var add in body.additionalSpeed)
+                        if (add != null && add != skipA && add != skipB) speed += add.speed;
+                var applied = Rounds.CardEffects.AppliedOf(body);
+                var weight = applied != null ? Mathf.Clamp(applied.Stats.Weight, 0.1f, 10f) : 1f;
+                var dash = Rounds.CardEffects.DashOf(body);
+                var shove = body.GetComponent<BallShove>();
+                var charges = dash != null ? Mathf.FloorToInt(dash.Charges) : (shove != null && shove.shoveTimer <= 0f ? 1 : 0);
+                byte flags = 0;
+                if (body.canMove) flags |= Prediction.FCanMove;
+                if (body.canShove) flags |= Prediction.FCanShove;
+                if (body.carryObject != null) flags |= Prediction.FCarrying;
+                if (body.alive) flags |= Prediction.FAlive;
+                if (body.fallen) flags |= Prediction.FFallen;
+                if (body.ballMesh.activeSelf) flags |= Prediction.FMesh;
+
+                Begin(Msg.Own);
+                _msg.U32(ci.Input.Seq);
+                _msg.U8((byte)slot);
+                _msg.F32(rb.position.x); _msg.F32(rb.position.y);
+                _msg.F32(rb.velocity.x); _msg.F32(rb.velocity.y);
+                _msg.F32(Mathf.Max(0f, speed));
+                _msg.F32(rb.mass);
+                _msg.F32(Rounds.CardEffects.GameDashForce * weight);
+                _msg.U8(flags);
+                _msg.U8((byte)Mathf.Clamp(charges, 0, 255));
+                ci.Conn.SendUnreliable(_msg);
+            }
         }
 
         private void SendSnapshot(GameManager gm)

@@ -61,7 +61,7 @@ namespace CP99Online.Net
             if (Role != Role.None) return;
             try
             {
-                _transport = UdpTransport.Connect(host, port);
+                _transport = LagTransport.Wrap(UdpTransport.Connect(host, port));
             }
             catch (Exception e)
             {
@@ -194,6 +194,9 @@ namespace CP99Online.Net
                     break;
                 case Msg.Snapshot:
                     if (Match.Active) ReadSnapshot(r);
+                    break;
+                case Msg.Own:
+                    if (Match.Active) Prediction.Read(r, Now);
                     break;
                 case Msg.Events:
                     if (Match.Active) ApplyEvents(r);
@@ -378,6 +381,12 @@ namespace CP99Online.Net
 
             if (!Match.Active) return;
             PollLocalInput();
+            {
+                Vector2 move, aim; byte held;
+                ReadControls(out move, out aim, out held);
+                Prediction.FrameTick(move, aim, (held & Proto.HSprint) != 0);
+                Prediction.LogStats(Now);
+            }
             _inputAccum += Time.unscaledDeltaTime;
             if (_inputAccum >= Proto.SendRate)
             {
@@ -399,10 +408,10 @@ namespace CP99Online.Net
             if (TestHarness.DriveInput)
             {
                 // Local test only: shoot/shove every 1.5s.
-                if ((int)(Now / 1.5f) != (int)((Now - Time.unscaledDeltaTime) / 1.5f)) _downCount[0]++;
+                if ((int)(Now / 1.5f) != (int)((Now - Time.unscaledDeltaTime) / 1.5f)) { _downCount[0]++; Prediction.OnShootPressed(); }
                 return;
             }
-            if (Input.GetButtonDown(bi.buttonName_shoot) || Input.GetButtonDown(bi.buttonName_shootAlt)) _downCount[0]++;
+            if (Input.GetButtonDown(bi.buttonName_shoot) || Input.GetButtonDown(bi.buttonName_shootAlt)) { _downCount[0]++; Prediction.OnShootPressed(); }
             if (Input.GetButtonDown(bi.buttonName_callPass) || bi.axisName_x2 == "Mouse X" && Input.GetKeyDown(KeyCode.F)) _downCount[1]++;
             var charging = IsCharging(bi);
             if (charging && !_prevCharging) _downCount[2]++;
@@ -417,14 +426,39 @@ namespace CP99Online.Net
             return axis > 0.5f || Input.GetButton(bi.buttonName_charge) || Input.GetButton(bi.buttonName_chargeAlt);
         }
 
+        private void ClientFixedUpdate()
+        {
+            if (!Match.Active) return;
+            Vector2 move, aim; byte held;
+            ReadControls(out move, out aim, out held);
+            Prediction.FixedTick(Globals.gameManager, Now, move, (held & Proto.HSprint) != 0, (held & Proto.HCharge) != 0);
+        }
+
         private void SendInput(Connection c)
+        {
+            Vector2 move, aim; byte held;
+            ReadControls(out move, out aim, out held);
+            Begin(Msg.Input);
+            _msg.U32(++_inputSeq);
+            _msg.I16(Proto.PackUnit(move.x)); _msg.I16(Proto.PackUnit(move.y));
+            _msg.I16(Proto.PackUnit(aim.x)); _msg.I16(Proto.PackUnit(aim.y));
+            _msg.U8(held);
+            for (var i = 0; i < 3; i++) _msg.U8(_downCount[i]);
+            _msg.U8(_chargeUpCount);
+            _msg.U8(Possession.ClientSwitchCount);
+            c.SendUnreliable(_msg);
+            Prediction.OnInputSent(_inputSeq);
+        }
+
+        /// <summary>This PC's controls right now: what goes in the input message, and what the prediction uses.</summary>
+        private void ReadControls(out Vector2 move, out Vector2 aim, out byte held)
         {
             var bi = LocalInput();
             var gm = Globals.gameManager;
             var paused = gm != null && gm.pauseMenuManager != null && gm.pauseMenuManager.paused;
-            var move = Vector2.zero;
-            var aim = Vector2.zero;
-            byte held = 0;
+            move = Vector2.zero;
+            aim = Vector2.zero;
+            held = 0;
             if (bi != null && !paused)
             {
                 move = bi.axis1Input;
@@ -447,15 +481,6 @@ namespace CP99Online.Net
                 held = 0;
                 if (TestHarness.BrakeTest && Mathf.Repeat(Now, 8f) < 0.4f) held |= Proto.HSprint; // brake now and then
             }
-            Begin(Msg.Input);
-            _msg.U32(++_inputSeq);
-            _msg.I16(Proto.PackUnit(move.x)); _msg.I16(Proto.PackUnit(move.y));
-            _msg.I16(Proto.PackUnit(aim.x)); _msg.I16(Proto.PackUnit(aim.y));
-            _msg.U8(held);
-            for (var i = 0; i < 3; i++) _msg.U8(_downCount[i]);
-            _msg.U8(_chargeUpCount);
-            _msg.U8(Possession.ClientSwitchCount);
-            c.SendUnreliable(_msg);
         }
 
         private void ReadSnapshot(Reader r)
@@ -546,12 +571,18 @@ namespace CP99Online.Net
             var puckGo = gm.puck;
             var puck = puckGo.GetComponent<Puck>();
             var n = Mathf.Min(Match.Balls.Length, Mathf.Min(a.X.Length, b.X.Length));
+            var predictedOffset = Vector3.zero; // our predicted ball vs where the snapshots have it
             for (var i = 0; i < n; i++)
             {
                 var ball = Match.Balls[i];
                 var tr = ball.transform;
-                tr.position = new Vector3(Mathf.Lerp(a.X[i], b.X[i], t), Mathf.Lerp(a.Y[i], b.Y[i], t), tr.position.z);
-                tr.rotation = Quaternion.Euler(0f, 0f, Mathf.LerpAngle(a.Rot[i], b.Rot[i], t));
+                var snapPos = new Vector3(Mathf.Lerp(a.X[i], b.X[i], t), Mathf.Lerp(a.Y[i], b.Y[i], t), tr.position.z);
+                if (Prediction.Owns(i)) predictedOffset = tr.position - snapPos; // this PC moves it (Prediction)
+                else
+                {
+                    tr.position = snapPos;
+                    tr.rotation = Quaternion.Euler(0f, 0f, Mathf.LerpAngle(a.Rot[i], b.Rot[i], t));
+                }
 
                 var f = b.BallFlags[i];
                 ball.alive = (f & Proto.BAlive) != 0;
@@ -583,6 +614,7 @@ namespace CP99Online.Net
 
             var pt = puckGo.transform;
             pt.position = new Vector3(Mathf.Lerp(a.PuckX, b.PuckX, t), Mathf.Lerp(a.PuckY, b.PuckY, t), pt.position.z);
+            if (b.Carrier >= 0 && Prediction.Owns(b.Carrier)) pt.position += new Vector3(predictedOffset.x, predictedOffset.y, 0f); // carried along with our ball
             pt.rotation = Quaternion.Euler(0f, 0f, Mathf.LerpAngle(a.PuckRot, b.PuckRot, t));
             var carrierBall = Match.Ball(b.Carrier);
             puck.carryer = carrierBall != null ? carrierBall.gameObject : null;

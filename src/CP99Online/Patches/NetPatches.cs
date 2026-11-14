@@ -200,13 +200,29 @@ namespace CP99Online.Patches
     internal static class ClientGoalGuard { private static bool Prefix() { return !NetSession.ClientInMatch; } }
 
     [HarmonyPatch(typeof(Boost), "OnTriggerEnter2D")]
-    internal static class ClientBoostGuard { private static bool Prefix() { return !NetSession.ClientInMatch; } }
+    internal static class ClientBoostGuard
+    {
+        private static bool Prefix(Boost __instance, Collider2D collider2D)
+        {
+            if (!NetSession.ClientInMatch) return true;
+            Prediction.OnBoost(__instance, collider2D); // our own ball: the push now; the host sends the effects
+            return false;
+        }
+    }
 
     [HarmonyPatch(typeof(Spikes), "OnCollisionEnter2D")]
     internal static class ClientSpikesGuard { private static bool Prefix() { return !NetSession.ClientInMatch; } }
 
     [HarmonyPatch(typeof(Bumper), "OnCollisionEnter2D")]
-    internal static class ClientBumperGuard { private static bool Prefix() { return !NetSession.ClientInMatch; } }
+    internal static class ClientBumperGuard
+    {
+        private static bool Prefix(Bumper __instance, Collision2D collision2D)
+        {
+            if (!NetSession.ClientInMatch) return true;
+            Prediction.OnBumper(__instance, collision2D); // our own ball: the push now; the host sends the effects
+            return false;
+        }
+    }
 
     [HarmonyPatch(typeof(Puck), "FixedUpdate")]
     internal static class ClientPuckGuard { private static bool Prefix() { return !NetSession.ClientInMatch; } }
