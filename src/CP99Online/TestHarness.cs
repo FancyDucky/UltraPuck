@@ -239,18 +239,22 @@ namespace CP99Online
                 else if (_step == 1 && t - _stepAt > 6f)
                 {
                     MenuGlobals.menuManager.playerSelectionManager_V2.SignInPlayer(0); // goes to the host as a box request
-                    Next(t, "client presses join");
+                    if (TwoLocal) MenuGlobals.menuManager.playerSelectionManager_V2.SignInPlayer(1); // a second controller on this PC
+                    Next(t, "client presses join" + (TwoLocal ? " on two controllers" : string.Empty));
                 }
                 else if (_step == 2)
                 {
                     var mgr = MenuGlobals.menuManager.playerSelectionManager_V2;
-                    var mine = mgr.playerBoxes.FirstOrDefault(b => b.boxActive && !NetSession.IsNetBox(b));
-                    if (mine != null && t - _stepAt > 1f)
+                    var mine = mgr.playerBoxes.Where(b => b.boxActive && !NetSession.IsNetBox(b)).ToList();
+                    if (mine.Count >= (TwoLocal ? 2 : 1) && t - _stepAt > 1f)
                     {
-                        mine.playerAccount = new Account("CLIENTPLAYER", false, 3);
-                        mine.ChangeStateTo(PlayerBox_V2.PlayerBoxState.SIGNEDIN);
-                        mine.ChangeTeamsTo(1);
-                        Next(t, "client got box " + (Array.IndexOf(mgr.playerBoxes, mine) + 1) + ", picked a profile and team 2");
+                        for (var k = 0; k < mine.Count; k++)
+                        {
+                            mine[k].playerAccount = new Account(k == 0 ? "CLIENTPLAYER" : "CLIENTTWO", false, 3 + k);
+                            mine[k].ChangeStateTo(PlayerBox_V2.PlayerBoxState.SIGNEDIN);
+                            mine[k].ChangeTeamsTo(1);
+                        }
+                        Next(t, "client got box(es) " + string.Join(", ", mine.Select(b => (Array.IndexOf(mgr.playerBoxes, b) + 1).ToString()).ToArray()) + ", picked profiles and team 2");
                     }
                 }
                 else if (_step == 3 && scene == "GameSelection")
@@ -291,6 +295,9 @@ namespace CP99Online
             box.ChangeStateTo(PlayerBox_V2.PlayerBoxState.SIGNEDIN);
             box.ChangeTeamsTo(team);
         }
+
+        /// <summary>CP99_TEST_LOCAL2=1 (client): join with two controllers, as two players on one PC.</summary>
+        private static readonly bool TwoLocal = Environment.GetEnvironmentVariable("CP99_TEST_LOCAL2") == "1";
 
         private static readonly string TestMap = Environment.GetEnvironmentVariable("CP99_TEST_MAP");
         private static CustomArena _testArena;
@@ -506,7 +513,7 @@ namespace CP99Online
             var gm = Globals.gameManager;
             if (gm == null || gm.startCountdown > 0f || Time.realtimeSinceStartup < _nextSwitch) return;
             _nextSwitch = Time.realtimeSinceStartup + 3f;
-            if (_role == "client") { Possession.ClientSwitchCount++; NetLog.Info("TEST switch: client pressed switch (" + Possession.ClientSwitchCount + ")"); return; }
+            if (_role == "client") { Possession.ClientPressSwitch(Match.LocalSlot); NetLog.Info("TEST switch: client pressed switch (" + Possession.ClientSwitchCountOf(Match.LocalSlot) + ")"); return; }
             var home = Match.Balls.FirstOrDefault(b => b != null && b.playerData != null && !b.playerData.AI && !Match.IsRemote(Match.Slot(b)));
             if (home != null) Possession.Request(home);
             var d = new System.Text.StringBuilder("TEST switch state:");

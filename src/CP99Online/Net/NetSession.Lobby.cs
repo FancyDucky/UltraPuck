@@ -9,6 +9,8 @@ namespace CP99Online.Net
     /// client (its id). The owner runs its box for real (own controller, own local profiles); everyone else
     /// shows it as a "phone controller" box with no input, mirroring the name/symbol/team the owner reports.
     /// The host hands out slots, keeps the master table and tells clients which menu scene to be in.
+    /// A client PC can have several players (couch players): each controller that joins gets its own box, as
+    /// "local player" 0, 1, ... of that PC. Remote boxes are named "NET:client:local".
     /// </summary>
     internal sealed partial class NetSession
     {
@@ -35,11 +37,24 @@ namespace CP99Online.Net
             return box.controllerNumber == 9 && box.controllerId != null && box.controllerId.StartsWith(NetIdPrefix);
         }
 
+        internal static string NetId(int owner, int local) { return NetIdPrefix + owner + ":" + local; }
+
         internal static int OwnerFromId(string joystickId)
         {
-            int id;
+            int local;
+            return OwnerFromId(joystickId, out local);
+        }
+
+        /// <summary>"NET:client:local" (or the old "NET:client") to the client id and its local player.</summary>
+        internal static int OwnerFromId(string joystickId, out int local)
+        {
+            local = 0;
             if (joystickId == null || !joystickId.StartsWith(NetIdPrefix)) return -1;
-            return int.TryParse(joystickId.Substring(NetIdPrefix.Length), out id) ? id : -1;
+            var parts = joystickId.Substring(NetIdPrefix.Length).Split(':');
+            int id;
+            if (!int.TryParse(parts[0], out id)) return -1;
+            if (parts.Length > 1 && !int.TryParse(parts[1], out local)) local = 0;
+            return id;
         }
 
         /// <summary>Remote boxes read their buttons from a phone-controller object; give them one that never presses anything.</summary>
@@ -51,14 +66,14 @@ namespace CP99Online.Net
         }
 
         /// <summary>Shows another player's box: in progress ("JOINING...", no team) or signed in with their profile and team.</summary>
-        private static void MirrorBox(PlayerBox_V2 box, int owner, int state, int team, string name, int symbol)
+        private static void MirrorBox(PlayerBox_V2 box, int owner, int local, int state, int team, string name, int symbol)
         {
             if (owner < 0)
             {
                 if (box.boxActive && IsNetBox(box)) box.SignOut();
                 return;
             }
-            var id = NetIdPrefix + owner;
+            var id = NetId(owner, local);
             EnsurePhone(id);
             if (!box.boxActive || box.controllerId != id || box.controllerNumber != 9) box.SignIn(id);
             var ready = state == (int)PlayerBox_V2.PlayerBoxState.SIGNEDIN;
@@ -92,8 +107,12 @@ namespace CP99Online.Net
             if (!InPlayerSelection) return;
             var boxes = SelMgr.playerBoxes;
             foreach (var ci in _clients.Values)
-                if (ci.BoxSlot >= 0 && ci.BoxSlot < boxes.Length)
-                    MirrorBox(boxes[ci.BoxSlot], ci.Id, ci.BoxStateValue, ci.BoxTeam, ci.BoxName, ci.BoxSymbol);
+                for (var k = 0; k < ci.Seats.Length; k++)
+                {
+                    var seat = ci.Seats[k];
+                    if (seat.BoxSlot >= 0 && seat.BoxSlot < boxes.Length)
+                        MirrorBox(boxes[seat.BoxSlot], ci.Id, k, seat.BoxStateValue, seat.BoxTeam, seat.BoxName, seat.BoxSymbol);
+                }
 
             WriteTable();
             var sig = System.Convert.ToBase64String(_msg.Buffer, 0, _msg.Length);
@@ -115,9 +134,9 @@ namespace CP99Online.Net
                 if (box == null || !box.boxActive) { _msg.U8(255); _msg.U8(0); _msg.U8(0); _msg.Str(string.Empty); _msg.U8(0); continue; }
                 if (IsNetBox(box))
                 {
-                    var ci = _clients.Values.FirstOrDefault(c => c.BoxSlot == i);
-                    if (ci == null) { _msg.U8(255); _msg.U8(0); _msg.U8(0); _msg.Str(string.Empty); _msg.U8(0); continue; }
-                    _msg.U8(ci.Id); _msg.U8((byte)ci.BoxStateValue); _msg.U8((byte)(ci.BoxTeam + 1)); _msg.Str(ci.BoxName ?? string.Empty); _msg.U8((byte)ci.BoxSymbol);
+                    ClientInfo ci; ClientSeat seat;
+                    if (!SeatAt(i, out ci, out seat)) { _msg.U8(255); _msg.U8(0); _msg.U8(0); _msg.Str(string.Empty); _msg.U8(0); continue; }
+                    _msg.U8(ci.Id); _msg.U8((byte)seat.BoxStateValue); _msg.U8((byte)(seat.BoxTeam + 1)); _msg.Str(seat.BoxName ?? string.Empty); _msg.U8((byte)seat.BoxSymbol);
                     continue;
                 }
                 var signed = box.currentState == PlayerBox_V2.PlayerBoxState.SIGNEDIN && box.playerAccount != null;
@@ -135,28 +154,40 @@ namespace CP99Online.Net
             _msg.U8((byte)o.team1AIDifficultyScroller.currentValue);
         }
 
-        private void HostHandleBoxRequest(ClientInfo ci, int controller)
+        /// <summary>Which client's player (if any) has this box.</summary>
+        private bool SeatAt(int slot, out ClientInfo ci, out ClientSeat seat)
         {
-            if (!InPlayerSelection || ci.BoxSlot >= 0) return;
+            foreach (var c in _clients.Values)
+                foreach (var x in c.Seats)
+                    if (x.BoxSlot == slot) { ci = c; seat = x; return true; }
+            ci = null; seat = null;
+            return false;
+        }
+
+        private void HostHandleBoxRequest(ClientInfo ci, int local, int controller)
+        {
+            if (!InPlayerSelection || local >= ci.Seats.Length || ci.Seats[local].BoxSlot >= 0) return;
             var mgr = SelMgr;
             mgr.SetCurrentPlayerBox();
             var slot = mgr.currentPlayerBox;
             if (slot >= Boxes) { NetLog.Info("No free player box for " + ci.Name); return; }
-            AssignBox(ci, slot, false);
-            NetLog.Info(ci.Name + " joined player box " + (slot + 1));
+            AssignBox(ci, local, slot, false);
+            NetLog.Info(ci.Name + (local > 0 ? " (player " + (local + 1) + " on that PC)" : string.Empty) + " joined player box " + (slot + 1));
         }
 
-        private void AssignBox(ClientInfo ci, int slot, bool restore)
+        private void AssignBox(ClientInfo ci, int local, int slot, bool restore)
         {
-            ci.BoxSlot = slot;
+            var seat = ci.Seats[local];
+            seat.BoxSlot = slot;
             if (!restore)
             {
-                ci.BoxStateValue = (int)PlayerBox_V2.PlayerBoxState.CHOOSEACCOUNT;
-                ci.BoxTeam = -1;
+                seat.BoxStateValue = (int)PlayerBox_V2.PlayerBoxState.CHOOSEACCOUNT;
+                seat.BoxTeam = -1;
             }
-            MirrorBox(SelMgr.playerBoxes[slot], ci.Id, ci.BoxStateValue, ci.BoxTeam, ci.BoxName, ci.BoxSymbol);
+            MirrorBox(SelMgr.playerBoxes[slot], ci.Id, local, seat.BoxStateValue, seat.BoxTeam, seat.BoxName, seat.BoxSymbol);
             SelMgr.SetCurrentPlayerBox();
             Begin(Msg.BoxAssign);
+            _msg.U8((byte)local);
             _msg.U8((byte)slot);
             _msg.Bool(restore);
             ci.Conn.SendReliable(_msg, Now);
@@ -169,44 +200,47 @@ namespace CP99Online.Net
             var team = r.U8() - 1;
             var name = Clean(r.Str());
             var symbol = r.U8();
-            if (slot != ci.BoxSlot) return;
+            var seat = ci.Seats.FirstOrDefault(x => x.BoxSlot == slot);
+            if (seat == null) return;
             if (state == (int)PlayerBox_V2.PlayerBoxState.BLANK)
             {
-                FreeBox(ci);
+                FreeBox(ci, seat);
                 return;
             }
-            ci.BoxStateValue = state;
-            ci.BoxTeam = team;
-            ci.BoxName = name;
-            ci.BoxSymbol = symbol;
+            seat.BoxStateValue = state;
+            seat.BoxTeam = team;
+            seat.BoxName = name;
+            seat.BoxSymbol = symbol;
         }
 
-        private void FreeBox(ClientInfo ci)
+        private void FreeBox(ClientInfo ci, ClientSeat seat)
         {
-            if (ci.BoxSlot < 0) return;
+            if (seat.BoxSlot < 0) return;
             if (InPlayerSelection)
             {
-                var box = SelMgr.playerBoxes[ci.BoxSlot];
+                var box = SelMgr.playerBoxes[seat.BoxSlot];
                 if (IsNetBox(box)) box.SignOut();
             }
-            NetLog.Info(ci.Name + " left player box " + (ci.BoxSlot + 1));
-            ci.BoxSlot = -1;
-            ci.InLastMatch = false;
+            NetLog.Info(ci.Name + " left player box " + (seat.BoxSlot + 1));
+            seat.BoxSlot = -1;
+            seat.InLastMatch = false;
         }
 
         /// <summary>PlayerSelectionManager_V2.Start postfix (host): puts last match's online players back in boxes.</summary>
         internal void HostOnPlayerSelectionStart()
         {
             _tableSig = null;
-            foreach (var ci in _clients.Values) ci.BoxSlot = -1;
-            foreach (var ci in Clients.Where(c => c.InLastMatch).ToList())
-            {
-                SelMgr.SetCurrentPlayerBox();
-                var slot = SelMgr.currentPlayerBox;
-                if (slot >= Boxes) break;
-                ci.BoxStateValue = (int)PlayerBox_V2.PlayerBoxState.SIGNEDIN;
-                AssignBox(ci, slot, true);
-            }
+            foreach (var ci in _clients.Values) foreach (var seat in ci.Seats) seat.BoxSlot = -1;
+            foreach (var ci in Clients.ToList())
+                for (var k = 0; k < ci.Seats.Length; k++)
+                {
+                    if (!ci.Seats[k].InLastMatch) continue;
+                    SelMgr.SetCurrentPlayerBox();
+                    var slot = SelMgr.currentPlayerBox;
+                    if (slot >= Boxes) return;
+                    ci.Seats[k].BoxStateValue = (int)PlayerBox_V2.PlayerBoxState.SIGNEDIN;
+                    AssignBox(ci, k, slot, true);
+                }
         }
 
         /// <summary>Host OnLevelWasLoaded: menu scenes are shared, so clients follow.</summary>
@@ -247,12 +281,19 @@ namespace CP99Online.Net
 
         // ---------------------------------------------------------------- client
 
-        private int _mySlot = -1;
-        private bool _boxRequested;
-        private int _myController;
-        private Account _myAccount;
-        private int _myTeam = -1;
-        private string _myBoxSig;
+        /// <summary>One player on this PC: the controller they joined with, their box and profile (kept between matches).</summary>
+        private sealed class LocalSeat
+        {
+            public int Slot = -1;       // player box, -1 = none
+            public bool Requested;      // asked the host for a box
+            public bool Used;           // has joined at some point (keeps the controller and profile for next time)
+            public int Controller;
+            public Account Account;
+            public int Team = -1;
+            public string Sig;
+        }
+
+        private readonly LocalSeat[] _seats = { new LocalSeat(), new LocalSeat(), new LocalSeat(), new LocalSeat() };
         private bool _hasMirrorOptions;
         private bool _mirrorOptionsOpened;
         private readonly int[] _mirrorAi = new int[4];
@@ -260,17 +301,32 @@ namespace CP99Online.Net
         internal static bool ClientLobbyActive { get { return IsClient && Instance.Welcomed && !Match.Active; } }
         internal static bool MirroredOptionsOpened { get { return Instance != null && Instance._mirrorOptionsOpened; } }
 
-        /// <summary>The controller this client joined player selection with (for its ball in the match).</summary>
-        internal int MatchJoystick { get { return _mySlot >= 0 || _myAccount != null ? _myController : Plugin.LocalJoystick(); } }
+        /// <summary>The controller this PC's player `local` joined player selection with (for their ball in the match).</summary>
+        internal int MatchJoystick(int local)
+        {
+            var seat = local >= 0 && local < _seats.Length ? _seats[local] : null;
+            return seat != null && seat.Used ? seat.Controller : Plugin.LocalJoystick();
+        }
 
-        /// <summary>PlayerSelectionManager_V2.SignInPlayer prefix (client): ask the host for a box instead.</summary>
+        /// <summary>
+        /// PlayerSelectionManager_V2.SignInPlayer prefix (client): a controller here pressed join, so ask the host for
+        /// a box for it (each controller is its own player; up to Proto.MaxLocal per PC).
+        /// </summary>
         internal bool ClientRequestBox(int controller)
         {
-            if (_mySlot >= 0 || _boxRequested) return false; // one player per online client
-            _boxRequested = true;
-            _myController = controller;
-            _myAccount = null;
+            if (_seats.Any(x => x.Controller == controller && (x.Slot >= 0 || x.Requested))) return false; // already in
+            // the seat this controller had before (keeps its profile), else a fresh one, else any free one
+            var k = System.Array.FindIndex(_seats, x => x.Used && x.Controller == controller && x.Slot < 0 && !x.Requested);
+            if (k < 0) k = System.Array.FindIndex(_seats, x => !x.Used);
+            if (k < 0) k = System.Array.FindIndex(_seats, x => x.Slot < 0 && !x.Requested);
+            if (k < 0) return false; // this PC is full
+            var seat = _seats[k];
+            if (seat.Controller != controller) seat.Account = null;
+            seat.Requested = true;
+            seat.Used = true;
+            seat.Controller = controller;
             Begin(Msg.BoxReq);
+            _msg.U8((byte)k);
             _msg.U8((byte)controller);
             _conns.Values.First().SendReliable(_msg, Now);
             return false;
@@ -278,22 +334,25 @@ namespace CP99Online.Net
 
         private void ClientHandleBoxAssign(Reader r)
         {
+            var local = r.U8();
             var slot = r.U8();
             var restore = r.Bool();
-            _boxRequested = false;
+            if (local >= _seats.Length) return;
+            var seat = _seats[local];
+            seat.Requested = false;
             if (!InPlayerSelection) return;
             var box = SelMgr.playerBoxes[slot];
-            _mySlot = slot;
-            _myBoxSig = null;
-            box.SignIn(_myController);
-            if (restore && _myAccount != null)
+            seat.Slot = slot;
+            seat.Sig = null;
+            box.SignIn(seat.Controller);
+            if (restore && seat.Account != null)
             {
-                box.playerAccount = _myAccount;
+                box.playerAccount = seat.Account;
                 box.ChangeStateTo(PlayerBox_V2.PlayerBoxState.SIGNEDIN);
-                box.ChangeTeamsTo(_myTeam);
+                box.ChangeTeamsTo(seat.Team);
             }
             SelMgr.SetCurrentPlayerBox();
-            NetLog.Info("Got player box " + (slot + 1) + (restore ? " (kept from last match)" : string.Empty));
+            NetLog.Info("Got player box " + (slot + 1) + (local > 0 ? " for player " + (local + 1) + " here" : string.Empty) + (restore ? " (kept from last match)" : string.Empty));
         }
 
         private void ClientHandleBoxTable(Reader r)
@@ -316,10 +375,10 @@ namespace CP99Online.Net
             var boxes = SelMgr.playerBoxes;
             for (var i = 0; i < Boxes && i < boxes.Length; i++)
             {
-                if (i == _mySlot) continue;
+                if (_seats.Any(x => x.Slot == i)) continue;
                 var owner = entries[i, 0] == 255 ? -1 : entries[i, 0];
                 if (owner == _myId) owner = -1; // a box the host still lists as ours but we no longer own
-                MirrorBox(boxes[i], owner, entries[i, 1], entries[i, 2], names[i], entries[i, 3]);
+                MirrorBox(boxes[i], owner, 0, entries[i, 1], entries[i, 2], names[i], entries[i, 3]);
             }
             SelMgr.SetCurrentPlayerBox();
         }
@@ -328,29 +387,34 @@ namespace CP99Online.Net
         private void LobbyClientUpdate()
         {
             if (Application.loadedLevelName == "GameSelection") { ClientApplyNav(); return; }
-            if (!InPlayerSelection || _mySlot < 0) return;
-            var box = SelMgr.playerBoxes[_mySlot];
-            if (!box.boxActive || IsNetBox(box))
+            if (!InPlayerSelection) return;
+            foreach (var seat in _seats)
             {
-                SendMyBox(PlayerBox_V2.PlayerBoxState.BLANK, -1, string.Empty, 0);
-                _mySlot = -1;
-                _myAccount = null;
-                return;
+                if (seat.Slot < 0) continue;
+                var box = SelMgr.playerBoxes[seat.Slot];
+                if (!box.boxActive || IsNetBox(box))
+                {
+                    SendMyBox(seat.Slot, PlayerBox_V2.PlayerBoxState.BLANK, -1, string.Empty, 0);
+                    seat.Slot = -1;
+                    seat.Account = null;
+                    seat.Used = false; // left: the next controller to join can have this seat
+                    continue;
+                }
+                var signed = box.currentState == PlayerBox_V2.PlayerBoxState.SIGNEDIN && box.playerAccount != null;
+                if (signed) { seat.Account = box.playerAccount; seat.Team = box.currentTeam; }
+                var name = signed ? box.playerAccount.name : string.Empty;
+                var symbol = signed ? box.playerAccount.symbol : 0;
+                var sig = (int)box.currentState + "|" + box.currentTeam + "|" + name + "|" + symbol;
+                if (sig == seat.Sig) continue;
+                seat.Sig = sig;
+                SendMyBox(seat.Slot, box.currentState, box.currentTeam, name, symbol);
             }
-            var signed = box.currentState == PlayerBox_V2.PlayerBoxState.SIGNEDIN && box.playerAccount != null;
-            if (signed) { _myAccount = box.playerAccount; _myTeam = box.currentTeam; }
-            var name = signed ? box.playerAccount.name : string.Empty;
-            var symbol = signed ? box.playerAccount.symbol : 0;
-            var sig = (int)box.currentState + "|" + box.currentTeam + "|" + name + "|" + symbol;
-            if (sig == _myBoxSig) return;
-            _myBoxSig = sig;
-            SendMyBox(box.currentState, box.currentTeam, name, symbol);
         }
 
-        private void SendMyBox(PlayerBox_V2.PlayerBoxState state, int team, string name, int symbol)
+        private void SendMyBox(int slot, PlayerBox_V2.PlayerBoxState state, int team, string name, int symbol)
         {
             Begin(Msg.BoxState);
-            _msg.U8((byte)_mySlot);
+            _msg.U8((byte)slot);
             _msg.U8((byte)state);
             _msg.U8((byte)(team + 1));
             _msg.Str(name ?? string.Empty);
@@ -397,10 +461,8 @@ namespace CP99Online.Net
         /// <summary>Client OnLevelWasLoaded.</summary>
         private void ClientOnSceneLoaded(string scene)
         {
-            _mySlot = -1;
-            _boxRequested = false;
+            foreach (var seat in _seats) { seat.Slot = -1; seat.Requested = false; seat.Sig = null; }
             _hasMirrorOptions = false;
-            _myBoxSig = null;
             _hasNav = false;
         }
 

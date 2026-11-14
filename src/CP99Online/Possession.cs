@@ -53,7 +53,16 @@ namespace CP99Online
         private static Names _anyBotNames;
 
         /// <summary>Client: switch presses so far (sent in every input message).</summary>
-        internal static byte ClientSwitchCount;
+        internal static readonly Dictionary<int, byte> ClientSwitchCounts = new Dictionary<int, byte>();
+
+        /// <summary>Client: switch presses so far by this PC's player (by home slot).</summary>
+        internal static byte ClientSwitchCountOf(int slot)
+        {
+            byte n;
+            return ClientSwitchCounts.TryGetValue(slot, out n) ? n : (byte)0;
+        }
+
+        internal static void ClientPressSwitch(int slot) { ClientSwitchCounts[slot] = (byte)(ClientSwitchCountOf(slot) + 1); }
 
         /// <summary>Has anyone switched this match? (Until then everything behaves exactly like the game.)</summary>
         internal static bool Any { get { return _body.Count > 0 || _touched; } }
@@ -103,8 +112,11 @@ namespace CP99Online
 
             if (NetSession.ClientInMatch)
             {
-                var mine = Match.Ball(Match.LocalSlot);
-                if (mine != null && Pressed(Names.Of(mine.GetComponent<BallInput>()))) ClientSwitchCount++;
+                foreach (var slot in Match.LocalSlots)
+                {
+                    var mine = Match.Ball(slot);
+                    if (mine != null && Pressed(Names.Of(mine.GetComponent<BallInput>()))) ClientPressSwitch(slot);
+                }
                 return;
             }
 

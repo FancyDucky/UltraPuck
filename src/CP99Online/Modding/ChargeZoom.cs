@@ -149,8 +149,15 @@ namespace UltraPuck
             BallData best = null; var bestCharge = 0f;
             if (NetSession.IsClient)
             {
-                var mine = Match.Ball(Match.LocalSlot);
-                return mine != null && (TestCycle || Charge(mine) > 0f) ? mine : null;
+                foreach (var slot in Match.LocalSlots) // every player on this PC
+                {
+                    var mine = Match.Ball(slot);
+                    if (mine == null) continue;
+                    var c = Charge(mine);
+                    if (TestCycle && best == null) { best = mine; bestCharge = c; }
+                    if (c > bestCharge) { best = mine; bestCharge = c; }
+                }
+                return best;
             }
             foreach (var team in gm.teams)
                 foreach (var b in team.members)

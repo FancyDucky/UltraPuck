@@ -47,7 +47,8 @@ PLAY ONLINE
   Then everyone presses A to join a box, picks their own profile and moves up/down to pick a
   team, just like local multiplayer. The host presses Start and picks the arena and mode while
   everyone watches. After the match everyone returns to player select together.
-  One player per PC online; the host can also add couch players and AI bots.
+  Every PC can bring couch players: each controller that presses join gets its own box and
+  player (up to 4 on a joining PC). The host can also add AI bots.
   "Host direct IP" also works but needs UDP port 27099 forwarded on the host's router.
 
 MODS

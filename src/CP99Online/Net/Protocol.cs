@@ -12,15 +12,15 @@ namespace CP99Online.Net
         StartMatch,     // h->c  see NetSession.Host
         Loaded,         // c->h  u8 matchId
         Snapshot,       // h->c  unreliable world state
-        Input,          // c->h  unreliable controls
+        Input,          // c->h  unreliable controls: u8 ball slot, then the controls (one message per player on that PC)
         Events,         // h->c  batched gameplay effects
         Goal,           // h->c  u8 team, u8 goalType
         ResetField,     // h->c  bool suddenDeath
         SuddenDeath,    // h->c
         TimeUp,         // h->c
         MatchEnd,       // h->c  final stats
-        BoxReq,         // c->h  u8 controller: give me a player box
-        BoxAssign,      // h->c  u8 slot, bool restore
+        BoxReq,         // c->h  u8 local player, u8 controller: give this player of mine a player box
+        BoxAssign,      // h->c  u8 local player, u8 slot, bool restore
         BoxState,       // c->h  u8 slot, u8 state, u8 team+1, str name, u8 symbol
         BoxTable,       // h->c  8 x {u8 owner, u8 state, u8 team+1, str name, u8 symbol}, options
         Scene,          // h->c  str menu scene to be in
@@ -48,10 +48,12 @@ namespace CP99Online.Net
 
     internal static class Proto
     {
-        public const ushort Version = 11;
+        public const ushort Version = 13; // 12 was 0.9.2 / 0.9.3
         /// <summary>Snapshot charge byte: 255 = this charge. Over Charge goes up to 3 x (1 + 2) = 9.</summary>
         public const float ChargeScale = 9f;
         public const int MaxClients = 7;
+        /// <summary>Players one joining PC can bring (couch players on the same PC).</summary>
+        public const int MaxLocal = 4;
         public const float Timeout = 10f;
         public const float SendRate = 1f / 60f;
         public const byte PuckSlot = 255;

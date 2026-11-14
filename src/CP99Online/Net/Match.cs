@@ -14,7 +14,9 @@ namespace CP99Online.Net
         public static List<PlayerData> Players;
         /// <summary>Client id that controls each slot. 0 = host machine (local player or AI).</summary>
         public static List<byte> Owners;
-        public static int LocalSlot = -1;
+        public static int LocalSlot = -1; // the first player on this PC (client)
+        /// <summary>Client: every player on this PC (couch players), by slot.</summary>
+        public static readonly List<int> LocalSlots = new List<int>();
         public static bool ClientPending;
 
         public static BallData[] Balls = new BallData[0];

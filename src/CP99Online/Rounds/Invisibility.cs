@@ -101,8 +101,11 @@ namespace CP99Online.Rounds
             var teams = new HashSet<TeamData>();
             if (NetSession.ClientInMatch)
             {
-                var me = Match.Ball(Match.LocalSlot);
-                if (me != null) teams.Add(me.team);
+                foreach (var slot in Match.LocalSlots)
+                {
+                    var me = Match.Ball(slot);
+                    if (me != null) teams.Add(me.team);
+                }
                 return teams;
             }
             var gm = Globals.gameManager;

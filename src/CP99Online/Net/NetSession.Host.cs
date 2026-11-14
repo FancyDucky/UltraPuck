@@ -14,6 +14,17 @@ namespace CP99Online.Net
             public string Name;
             public int Team;
             public bool Loaded;
+            /// <summary>The players on that PC (couch players), each with a player box and controls of their own.</summary>
+            public readonly ClientSeat[] Seats = { new ClientSeat(), new ClientSeat(), new ClientSeat(), new ClientSeat() };
+            public bool InLastMatch { get { return Seats.Any(x => x.InLastMatch); } }
+            // the first player's box (tests)
+            public int BoxSlot { get { return Seats[0].BoxSlot; } }
+            public int BoxTeam { get { return Seats[0].BoxTeam; } }
+            public int BoxStateValue { get { return Seats[0].BoxStateValue; } }
+        }
+
+        internal sealed class ClientSeat
+        {
             public readonly NetInput.Remote Input = new NetInput.Remote();
             // shared player selection
             public int BoxSlot = -1;
@@ -160,7 +171,7 @@ namespace CP99Online.Net
                     break;
                 }
                 case Msg.BoxReq:
-                    if (ci != null) HostHandleBoxRequest(ci, r.U8());
+                    if (ci != null) { var local = r.U8(); HostHandleBoxRequest(ci, local, r.U8()); }
                     break;
                 case Msg.BoxState:
                     if (ci != null) HostHandleBoxState(ci, r);
@@ -169,7 +180,7 @@ namespace CP99Online.Net
                     if (ci != null) { ci.Team = r.U8() > 0 ? 1 : 0; BroadcastLobby(); }
                     break;
                 case Msg.Input:
-                    if (ci != null) ReadInput(ci.Input, r);
+                    if (ci != null) HostReadInput(ci, r);
                     break;
                 case Msg.CardPick:
                     if (ci != null) HostHandleCardPick(ci, r);
@@ -195,6 +206,15 @@ namespace CP99Online.Net
             for (var i = 0; i < 3; i++) c.SendUnreliable(_msg);
             _conns.Remove(c.PeerId);
             _transport.Disconnect(c.PeerId);
+        }
+
+        /// <summary>Msg.Input: which ball (one of that PC's), then its controls.</summary>
+        private static void HostReadInput(ClientInfo ci, Reader r)
+        {
+            var slot = r.U8();
+            if (Match.Owners == null || slot >= Match.Owners.Count || Match.Owners[slot] != ci.Id) return;
+            NetInput.Remote input;
+            if (NetInput.BySlot.TryGetValue(slot, out input)) ReadInput(input, r);
         }
 
         private static void ReadInput(NetInput.Remote input, Reader r)
@@ -248,7 +268,7 @@ namespace CP99Online.Net
             if (_clients.TryGetValue(peer, out ci))
             {
                 if (why != null) Toast.Show(why);
-                FreeBox(ci);
+                foreach (var seat in ci.Seats) FreeBox(ci, seat);
                 _clients.Remove(peer);
                 if (Match.Owners != null)
                     for (var s = 0; s < Match.Owners.Count; s++)
@@ -424,17 +444,22 @@ namespace CP99Online.Net
             // joystickId "NET:<client id>". They play on keyboard-style input names, which
             // HostOnSpawned then points at the network.
             var owners = new List<byte>();
-            foreach (var c in _clients.Values) c.InLastMatch = false;
+            var locals = new List<byte>();   // which of its PC's players each one is
+            var seats = new List<ClientSeat>();
+            foreach (var c in _clients.Values) foreach (var seat in c.Seats) seat.InLastMatch = false;
             for (var i = 0; i < players.Count; i++)
             {
-                var owner = OwnerFromId(players[i].joystickId);
+                int local;
+                var owner = OwnerFromId(players[i].joystickId, out local);
                 var ci = owner > 0 ? _clients.Values.FirstOrDefault(c => c.Id == owner) : null;
-                if (ci == null) { owners.Add(0); continue; }
+                if (ci == null || local >= ci.Seats.Length) { owners.Add(0); locals.Add(0); seats.Add(null); continue; }
                 players[i].joystickNum = 0;
                 Match.OnlinePlayers.Add(players[i]);
                 owners.Add(ci.Id);
+                locals.Add((byte)local);
+                seats.Add(ci.Seats[local]);
                 ci.Loaded = false;
-                ci.InLastMatch = true;
+                ci.Seats[local].InLastMatch = true;
             }
             foreach (var c in _clients.Values)
                 if (!c.InLastMatch) { c.Loaded = true; NetLog.Info(c.Name + " has no player this match and will watch"); }
@@ -447,10 +472,9 @@ namespace CP99Online.Net
             NetInput.BySlot.Clear();
             for (var s = 0; s < owners.Count; s++)
             {
-                if (owners[s] == 0) continue;
-                var ci = _clients.Values.First(c => c.Id == owners[s]);
-                ci.Input.Sync();
-                NetInput.BySlot[s] = ci.Input;
+                if (seats[s] == null) continue;
+                seats[s].Input.Sync();
+                NetInput.BySlot[s] = seats[s].Input;
             }
 
             if (mapText != null) HostSendMap(mapText);
@@ -473,6 +497,7 @@ namespace CP99Online.Net
                 _msg.Str(p.account != null ? p.account.name : "PLAYER");
                 _msg.U8(p.account != null ? p.account.symbol : 0);
                 _msg.U8(owners[i]);
+                _msg.U8(locals[i]);
             }
             BroadcastReliable();
 

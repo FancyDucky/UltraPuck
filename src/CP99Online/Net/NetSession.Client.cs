@@ -44,12 +44,23 @@ namespace CP99Online.Net
         private bool _wasReplaying;
         private float _hostTimeLeft = 999f;
 
-        // Local input, accumulated every frame and sent at Proto.SendRate.
-        private uint _inputSeq;
+        // Local input, accumulated every frame and sent at Proto.SendRate, for each player on this PC.
+        private sealed class Pad
+        {
+            public uint Seq;
+            public readonly byte[] DownCount = new byte[3];
+            public byte ChargeUpCount;
+            public bool PrevCharging;
+        }
+        private readonly Dictionary<int, Pad> _pads = new Dictionary<int, Pad>();
         private float _inputAccum;
-        private readonly byte[] _downCount = new byte[3];
-        private byte _chargeUpCount;
-        private bool _prevCharging;
+
+        private Pad PadOf(int slot)
+        {
+            Pad p;
+            if (!_pads.TryGetValue(slot, out p)) _pads[slot] = p = new Pad();
+            return p;
+        }
 
         public static float HostTimeLeft { get { return Instance != null ? Instance._hostTimeLeft : 999f; } }
         public static bool ClientHoldingStart { get { return Instance != null && Instance._clientHold; } }
@@ -232,6 +243,7 @@ namespace CP99Online.Net
             var players = new List<PlayerData>();
             var owners = new List<byte>();
             var local = -1;
+            var locals = new List<int>();
             for (var i = 0; i < n; i++)
             {
                 var team = r.U8();
@@ -240,13 +252,14 @@ namespace CP99Online.Net
                 var name = r.Str();
                 var symbol = r.U8();
                 var owner = r.U8();
+                var localIndex = r.U8();
                 var mine = owner == _myId;
-                var p = new PlayerData(ai, 0, mine ? MatchJoystick : 0, team)
+                var p = new PlayerData(ai, 0, mine ? MatchJoystick(localIndex) : 0, team)
                 {
                     teamColor = (TeamColor)color,
                     account = new Account(name, ai, symbol)
                 };
-                if (mine) local = i;
+                if (mine) { if (local < 0) local = i; locals.Add(i); }
                 players.Add(p);
                 owners.Add(owner);
             }
@@ -281,6 +294,10 @@ namespace CP99Online.Net
             Match.Players = players;
             Match.Owners = owners;
             Match.LocalSlot = local;
+            Match.LocalSlots.Clear();
+            Match.LocalSlots.AddRange(locals);
+            _pads.Clear();
+            Possession.ClientSwitchCounts.Clear();
             Match.ClientPending = true;
             Match.OnlinePlayers.Clear();
             foreach (var p in players) Match.OnlinePlayers.Add(p);
@@ -291,7 +308,7 @@ namespace CP99Online.Net
             _wasReplaying = false;
             Time.timeScale = 1f;
             Status = "Loading " + arena + "...";
-            NetLog.Info("Host started match " + id + " on " + arena + " (" + n + " players, my slot " + local + ")");
+            NetLog.Info("Host started match " + id + " on " + arena + " (" + n + " players, mine: " + (locals.Count > 0 ? string.Join(", ", locals.Select(x => x.ToString()).ToArray()) : "none") + ")");
             Application.LoadLevel("Arena3D");
         }
 
@@ -331,7 +348,7 @@ namespace CP99Online.Net
             for (var s = 0; s < Match.Balls.Length; s++)
             {
                 var b = Match.Balls[s];
-                var local = s == Match.LocalSlot;
+                var local = Match.LocalSlots.Contains(s);
                 b.GetComponent<BallInput>().enabled = local; // local one still reads this PC's controls
                 b.GetComponent<BallAI_v2>().enabled = false;
                 b.GetComponent<BallMovement>().enabled = false;
@@ -377,37 +394,38 @@ namespace CP99Online.Net
             if (Match.Active && gm != null && _clientHold) gm.startCountdown = 3.01f;
 
             if (!Match.Active) return;
-            PollLocalInput();
+            foreach (var slot in Match.LocalSlots) PollLocalInput(slot);
             _inputAccum += Time.unscaledDeltaTime;
             if (_inputAccum >= Proto.SendRate)
             {
                 _inputAccum = Mathf.Min(_inputAccum - Proto.SendRate, Proto.SendRate);
-                SendInput(c);
+                foreach (var slot in Match.LocalSlots) SendInput(c, slot);
             }
         }
 
-        private BallInput LocalInput()
+        private static BallInput LocalInput(int slot)
         {
-            var b = Match.Ball(Match.LocalSlot);
+            var b = Match.Ball(slot);
             return b != null ? b.GetComponent<BallInput>() : null;
         }
 
-        private void PollLocalInput()
+        private void PollLocalInput(int slot)
         {
-            var bi = LocalInput();
+            var bi = LocalInput(slot);
             if (bi == null) return;
+            var pad = PadOf(slot);
             if (TestHarness.DriveInput)
             {
                 // Local test only: shoot/shove every 1.5s.
-                if ((int)(Now / 1.5f) != (int)((Now - Time.unscaledDeltaTime) / 1.5f)) _downCount[0]++;
+                if ((int)(Now / 1.5f) != (int)((Now - Time.unscaledDeltaTime) / 1.5f)) pad.DownCount[0]++;
                 return;
             }
-            if (Input.GetButtonDown(bi.buttonName_shoot) || Input.GetButtonDown(bi.buttonName_shootAlt)) _downCount[0]++;
-            if (Input.GetButtonDown(bi.buttonName_callPass) || bi.axisName_x2 == "Mouse X" && Input.GetKeyDown(KeyCode.F)) _downCount[1]++;
+            if (Input.GetButtonDown(bi.buttonName_shoot) || Input.GetButtonDown(bi.buttonName_shootAlt)) pad.DownCount[0]++;
+            if (Input.GetButtonDown(bi.buttonName_callPass) || bi.axisName_x2 == "Mouse X" && Input.GetKeyDown(KeyCode.F)) pad.DownCount[1]++;
             var charging = IsCharging(bi);
-            if (charging && !_prevCharging) _downCount[2]++;
-            if (!charging && _prevCharging) _chargeUpCount++;
-            _prevCharging = charging;
+            if (charging && !pad.PrevCharging) pad.DownCount[2]++;
+            if (!charging && pad.PrevCharging) pad.ChargeUpCount++;
+            pad.PrevCharging = charging;
         }
 
         private static bool IsCharging(BallInput bi)
@@ -417,9 +435,10 @@ namespace CP99Online.Net
             return axis > 0.5f || Input.GetButton(bi.buttonName_charge) || Input.GetButton(bi.buttonName_chargeAlt);
         }
 
-        private void SendInput(Connection c)
+        private void SendInput(Connection c, int slot)
         {
-            var bi = LocalInput();
+            var bi = LocalInput(slot);
+            var pad = PadOf(slot);
             var gm = Globals.gameManager;
             var paused = gm != null && gm.pauseMenuManager != null && gm.pauseMenuManager.paused;
             var move = Vector2.zero;
@@ -448,13 +467,14 @@ namespace CP99Online.Net
                 if (TestHarness.BrakeTest && Mathf.Repeat(Now, 8f) < 0.4f) held |= Proto.HSprint; // brake now and then
             }
             Begin(Msg.Input);
-            _msg.U32(++_inputSeq);
+            _msg.U8((byte)slot);
+            _msg.U32(++pad.Seq);
             _msg.I16(Proto.PackUnit(move.x)); _msg.I16(Proto.PackUnit(move.y));
             _msg.I16(Proto.PackUnit(aim.x)); _msg.I16(Proto.PackUnit(aim.y));
             _msg.U8(held);
-            for (var i = 0; i < 3; i++) _msg.U8(_downCount[i]);
-            _msg.U8(_chargeUpCount);
-            _msg.U8(Possession.ClientSwitchCount);
+            for (var i = 0; i < 3; i++) _msg.U8(pad.DownCount[i]);
+            _msg.U8(pad.ChargeUpCount);
+            _msg.U8(Possession.ClientSwitchCountOf(slot));
             c.SendUnreliable(_msg);
         }
 
