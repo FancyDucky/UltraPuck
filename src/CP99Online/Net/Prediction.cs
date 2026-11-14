@@ -49,14 +49,32 @@ namespace CP99Online.Net
         private static float _boostCooldown;
 
         // how good the prediction is (logged every 10 s while predicting)
-        private static float _statErr, _statLast; private static int _statN, _statSnaps;
+        private static float _statErr, _statLast, _statOverlap; private static int _statN, _statSnaps;
+
+        /// <summary>How far our ball sinks into another player (should stay small now they're solid here).</summary>
+        private static void MeasureOverlap(Rigidbody2D mine)
+        {
+            var mc = mine.GetComponent<CircleCollider2D>();
+            if (mc == null) return;
+            var mr = mc.radius * Mathf.Abs(mine.transform.lossyScale.x);
+            for (var i = 0; i < Match.Balls.Length; i++)
+            {
+                if (i == _body) continue;
+                var b = Match.Balls[i];
+                var c = b != null ? b.GetComponent<CircleCollider2D>() : null;
+                if (c == null || !c.enabled) continue;
+                var r = c.radius * Mathf.Abs(b.transform.lossyScale.x);
+                var depth = mr + r - Vector2.Distance(mine.position, b.transform.position);
+                if (depth > _statOverlap) _statOverlap = depth;
+            }
+        }
 
         internal static void LogStats(float now, bool force = false)
         {
             if (!force && (!_active || now - _statLast < 10f)) return;
             _statLast = now;
-            if (_statN > 0) NetLog.Info("Prediction: average error " + (_statErr / _statN).ToString("0.000") + " over " + _statN + " host updates, " + _statSnaps + " snaps");
-            _statErr = 0f; _statN = 0; _statSnaps = 0;
+            if (_statN > 0) NetLog.Info("Prediction: average error " + (_statErr / _statN).ToString("0.000") + " over " + _statN + " host updates, " + _statSnaps + " snaps, deepest overlap with another player " + _statOverlap.ToString("0.00"));
+            _statErr = 0f; _statN = 0; _statSnaps = 0; _statOverlap = 0f;
         }
 
         internal const byte FCanMove = 1, FCanShove = 2, FCarrying = 4, FAlive = 8, FFallen = 16, FMesh = 32;
@@ -162,6 +180,7 @@ namespace CP99Online.Net
             if (!_active) return;
             LogStats(UnityEngine.Time.realtimeSinceStartup, true);
             _active = false;
+            SolidOthers(false);
             var ball = Match.Ball(_body);
             if (ball != null)
             {
@@ -170,6 +189,26 @@ namespace CP99Online.Net
             }
             _past.Clear(); _posErr = Vector2.zero;
             NetLog.Debug("Prediction off (" + (_why ?? "reset") + ")");
+        }
+
+        /// <summary>
+        /// While predicting, the other players are solid here (immovable, still placed by the snapshots), so our ball
+        /// bumps into them and dashes stop on them right away instead of passing through until the host's correction.
+        /// The host still decides the real hit. Dead, fallen or hidden players stay ghosts. The puck stays a ghost
+        /// (picking it up is the host's call).
+        /// </summary>
+        private static void SolidOthers(bool on)
+        {
+            for (var i = 0; i < Match.Balls.Length; i++)
+            {
+                if (i == _body) continue;
+                var b = Match.Balls[i];
+                if (b == null) continue;
+                var col = b.GetComponent<Collider2D>();
+                if (col == null) continue;
+                var solid = on && b.alive && !b.fallen && b.ballMesh != null && b.ballMesh.activeSelf;
+                if (col.enabled != solid) col.enabled = solid;
+            }
         }
 
         private static Rigidbody2D Rigidbody(int slot)
@@ -186,6 +225,8 @@ namespace CP99Online.Net
             var rb = Rigidbody(_body);
             if (rb == null) return;
             if (rb.isKinematic) rb.isKinematic = false; // something (a respawn) made it a puppet again
+            SolidOthers(true);
+            MeasureOverlap(rb);
             var carrying = (_hostFlags & FCarrying) != 0;
             var speed = _hostSpeed - (brake && !carrying ? SprintSlow : 0f) - (charging ? ChargeSlow : 0f);
             if (speed < 0f) speed = 0f;

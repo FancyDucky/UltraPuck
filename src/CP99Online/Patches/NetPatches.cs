@@ -210,6 +210,10 @@ namespace CP99Online.Patches
         }
     }
 
+    /// <summary>Falling into a pit is the host's call (our predicted ball touches pit triggers here too).</summary>
+    [HarmonyPatch(typeof(Pit), "OnTriggerEnter2D")]
+    internal static class ClientPitGuard { private static bool Prefix() { return !NetSession.ClientInMatch; } }
+
     [HarmonyPatch(typeof(Spikes), "OnCollisionEnter2D")]
     internal static class ClientSpikesGuard { private static bool Prefix() { return !NetSession.ClientInMatch; } }
 

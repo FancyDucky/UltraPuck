@@ -571,13 +571,17 @@ namespace CP99Online.Net
             var puckGo = gm.puck;
             var puck = puckGo.GetComponent<Puck>();
             var n = Mathf.Min(Match.Balls.Length, Mathf.Min(a.X.Length, b.X.Length));
-            var predictedOffset = Vector3.zero; // our predicted ball vs where the snapshots have it
+            Vector3 mineSnap = Vector3.zero, minePos = Vector3.zero; float mineSnapRot = 0f, mineRot = 0f; // our predicted ball: snapshot vs ours
             for (var i = 0; i < n; i++)
             {
                 var ball = Match.Balls[i];
                 var tr = ball.transform;
                 var snapPos = new Vector3(Mathf.Lerp(a.X[i], b.X[i], t), Mathf.Lerp(a.Y[i], b.Y[i], t), tr.position.z);
-                if (Prediction.Owns(i)) predictedOffset = tr.position - snapPos; // this PC moves it (Prediction)
+                if (Prediction.Owns(i)) // this PC moves it (Prediction)
+                {
+                    mineSnap = snapPos; minePos = tr.position;
+                    mineSnapRot = Mathf.LerpAngle(a.Rot[i], b.Rot[i], t); mineRot = tr.eulerAngles.z;
+                }
                 else
                 {
                     tr.position = snapPos;
@@ -614,7 +618,13 @@ namespace CP99Online.Net
 
             var pt = puckGo.transform;
             pt.position = new Vector3(Mathf.Lerp(a.PuckX, b.PuckX, t), Mathf.Lerp(a.PuckY, b.PuckY, t), pt.position.z);
-            if (b.Carrier >= 0 && Prediction.Owns(b.Carrier)) pt.position += new Vector3(predictedOffset.x, predictedOffset.y, 0f); // carried along with our ball
+            if (b.Carrier >= 0 && Prediction.Owns(b.Carrier))
+            {
+                // carried by our predicted ball: keep it where the host has it relative to the ball, but turned with
+                // the way we face now (not the host's older facing)
+                var rel = Quaternion.Euler(0f, 0f, Mathf.DeltaAngle(mineSnapRot, mineRot)) * (pt.position - mineSnap);
+                pt.position = new Vector3(minePos.x + rel.x, minePos.y + rel.y, pt.position.z);
+            }
             pt.rotation = Quaternion.Euler(0f, 0f, Mathf.LerpAngle(a.PuckRot, b.PuckRot, t));
             var carrierBall = Match.Ball(b.Carrier);
             puck.carryer = carrierBall != null ? carrierBall.gameObject : null;
