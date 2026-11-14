@@ -13,12 +13,14 @@ namespace UltraPuck
     {
         /// <summary>Movement speed multiplier (1.15 = 15% faster).</summary>
         public float MoveSpeed = 1f;
-        /// <summary>Shot strength multiplier.</summary>
+        /// <summary>Shot strength multiplier (every shot).</summary>
         public float ShotPower = 1f;
+        /// <summary>Quick shot strength multiplier (shots fired without charging; 1.5 = 50% harder).</summary>
+        public float QuickShotPower = 1f;
         /// <summary>Weight multiplier. Heavier = pushed less by hits (Knockback Taken = 1 / Weight) and your dash checks push
         /// others further (Knockback Given = Weight). Doesn't change your speed.</summary>
         public float Weight = 1f;
-        /// <summary>Dash (boost) recharge time multiplier (0.7 = recharges 30% faster).</summary>
+        /// <summary>Dash (boost) recharge time multiplier (0.5 = takes half as long).</summary>
         public float DashCooldown = 1f;
         /// <summary>Extra dash charges on top of the normal one.</summary>
         public int ExtraDashes;
@@ -32,17 +34,21 @@ namespace UltraPuck
         public float OpponentSpeed = 1f;
         /// <summary>How far toward the puck you start each face-off (0.2 = 20% closer).</summary>
         public float SpawnCloser;
+        /// <summary>Head Start copies: at every face-off, the team with the most starts with the puck (a tie: nobody).</summary>
+        public int HeadStart;
         /// <summary>Puck pick-up distance multiplier (1.2 = grab it from 20% further).</summary>
         public float PickupRange = 1f;
         /// <summary>Pylons (a solid dummy player) placed in front of your team's net.</summary>
         public int Pylons;
-        /// <summary>Every dash fires a shot that stuns the first player it hits (teammates too) for 1 s and knocks them back,
-        /// or knocks the puck away.</summary>
+        /// <summary>Braking fires a shot (2 s cooldown) that stuns the first player it hits (teammates too) for 1 s and
+        /// knocks them back, or knocks the puck away.</summary>
         public bool PuckGun;
         /// <summary>How hard your dash checks and Puck Gun shots push teammates (2.5 = +150%).</summary>
         public float FriendlyFire = 1f;
         /// <summary>Braking turns you invisible to the other team for 5 s (12 s cooldown).</summary>
         public bool Invisibility;
+        /// <summary>A teammate dashing into you gives you +80% move speed for 4 s.</summary>
+        public bool TeammateBoost;
     }
 
     /// <summary>
@@ -71,6 +77,9 @@ namespace UltraPuck
 
         /// <summary>Whether the card starts switched on in Mods > Rounds Mode > Toggle Cards.</summary>
         public virtual bool OnByDefault { get { return true; } }
+
+        /// <summary>Can this card be offered to a player whose team has <paramref name="teamSize"/> players (bots included)?</summary>
+        public virtual bool CanOffer(int teamSize) { return true; }
 
         /// <summary>Change the player's stats. Called once per copy of the card the player owns.</summary>
         public virtual void Apply(CardStats stats) { }
@@ -165,29 +174,29 @@ namespace UltraPuck
     {
         public override string Id { get { return "ultrapuck.powershot"; } }
         public override string Name { get { return "Power Shot"; } }
-        public override string Description { get { return CardText.Stat(1.25f, "Shot Power", true) + "\nQuick shots and charged shots both fly faster."; } }
+        public override string Description { get { return CardText.Stat(1.5f, "Quick Shot Power", true) + "\nShots you fire without charging fly faster. Charged shots don't change."; } }
         public override Color Color { get { return new Color(0.92f, 0.33f, 0.30f); } }
-        public override void Apply(CardStats s) { s.ShotPower *= 1.25f; }
+        public override void Apply(CardStats s) { s.QuickShotPower *= 1.5f; }
     }
 
     internal sealed class QuickRechargeCard : UltraCard
     {
         public override string Id { get { return "ultrapuck.quickrecharge"; } }
         public override string Name { get { return "Quick Recharge"; } }
-        public override string Description { get { return CardText.Stat(0.7f, "Dash Recharge", false) + "\nDash charges come back faster."; } }
+        public override string Description { get { return CardText.Stat(1.6f, "Dash Recharge Speed", true) + "\nDash charges come back 60% faster."; } }
         public override Color Color { get { return new Color(0.25f, 0.80f, 0.85f); } }
         public override int MaxPerPlayer { get { return 3; } }
-        public override void Apply(CardStats s) { s.DashCooldown *= 0.7f; }
+        public override void Apply(CardStats s) { s.DashCooldown /= 1.6f; }
     }
 
     internal sealed class HeavyweightCard : UltraCard
     {
         public override string Id { get { return "ultrapuck.heavyweight"; } }
         public override string Name { get { return "Heavyweight"; } }
-        public override string Description { get { return CardText.Stat(0.5f, "Knockback Taken", false) + "\n" + CardText.Stat(2f, "Knockback Given", true) + "\n" + CardText.Stat(1.08f, "Size", true, true) + "\n" + CardText.Stat(0.9f, "Move Speed", true); } }
+        public override string Description { get { return CardText.Stat(0.5f, "Knockback Taken", false) + "\n" + CardText.Stat(2f, "Knockback Given", true) + "\n" + CardText.Stat(1.13f, "Size", true, true); } }
         public override Color Color { get { return new Color(0.62f, 0.45f, 0.30f); } }
-        public override int MaxPerPlayer { get { return 2; } }
-        public override void Apply(CardStats s) { s.Weight *= 2f; s.Size *= 1.08f; s.MoveSpeed *= 0.9f; }
+        public override int MaxPerPlayer { get { return 3; } }
+        public override void Apply(CardStats s) { s.Weight *= 2f; s.Size *= 1.13f; }
     }
 
     internal sealed class FeatherweightCard : UltraCard
@@ -229,10 +238,10 @@ namespace UltraPuck
     {
         public override string Id { get { return "ultrapuck.betterspawn"; } } // id kept so saved Toggle Cards settings still apply
         public override string Name { get { return "Head Start"; } }
-        public override string Description { get { return CardText.Stat(0.8f, "Face-off Distance", false) + "\nStart each face-off closer to the puck."; } }
+        public override string Description { get { return CardText.Good("Your team starts face-offs with the puck") + "\nA random teammate gets it. If both teams have Head Start, the team with more copies gets it; a tie: it starts in the middle."; } }
         public override Color Color { get { return new Color(0.40f, 0.85f, 0.65f); } }
         public override int MaxPerPlayer { get { return 3; } }
-        public override void Apply(CardStats s) { s.SpawnCloser += 0.2f; }
+        public override void Apply(CardStats s) { s.HeadStart++; }
     }
 
     internal sealed class PylonGoalieCard : UltraCard
@@ -280,9 +289,10 @@ namespace UltraPuck
     {
         public override string Id { get { return "ultrapuck.friendlyfire"; } }
         public override string Name { get { return "Friendly Fire"; } }
-        public override string Description { get { return CardText.Stat(2.5f, "Teammate Knockback", true) + "\nDash into a teammate to launch them. Works with Puck Gun too."; } }
+        public override string Description { get { return "When a teammate dashes into you: " + CardText.Good("+80% Move Speed for 4 s") + "\nOnly offered on teams of 2 or more."; } }
         public override Color Color { get { return new Color(1.00f, 0.45f, 0.35f); } }
         public override int MaxPerPlayer { get { return 1; } }
-        public override void Apply(CardStats s) { s.FriendlyFire *= 2.5f; }
+        public override bool CanOffer(int teamSize) { return teamSize >= 2; }
+        public override void Apply(CardStats s) { s.TeammateBoost = true; }
     }
 }

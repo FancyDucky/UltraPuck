@@ -102,12 +102,14 @@ namespace CP99Online.Rounds
             foreach (var s in Seats) { s.Choice = -1; s.Offer = new string[0]; s.Last = null; }
             // Cards help the side that got scored on catch up: only they pick.
             var scorer = gm.teams.IndexOf(gm.teamThatJustScored);
+            int testPicker; // tests: CP99_TEST_PICKTEAM = the team that picks every time
+            if (int.TryParse(System.Environment.GetEnvironmentVariable("CP99_TEST_PICKTEAM"), out testPicker)) scorer = 1 - testPicker;
             ScoredOnTeam = Seats.Select(s => s.Team).FirstOrDefault(t => t != scorer);
             if (TeamMode)
             {
                 foreach (var team in Seats.Where(s => s.Team != scorer).GroupBy(s => s.Team))
                 {
-                    var offer = Draw(team.First(), n);
+                    var offer = Draw(new List<Seat> { team.First() }, n);
                     foreach (var s in team) s.Offer = offer;
                     // A team with no people in it: one bot picks.
                     if (!team.Any(s => s.Human) && offer.Length > 0) team.First().Choice = Random.Range(0, offer.Length);
@@ -115,10 +117,16 @@ namespace CP99Online.Rounds
             }
             else
             {
-                foreach (var s in Seats.Where(s => s.Team != scorer))
+                // People on the same PC (and team) are dealt one hand together, so they share one row of cards on screen;
+                // each still picks their own card. Bots are dealt alone.
+                foreach (var hand in Seats.Where(s => s.Team != scorer).GroupBy(s => s.Human ? "pc" + s.Owner + "/" + s.Team : "bot" + Seats.IndexOf(s)))
                 {
-                    s.Offer = Draw(s, n);
-                    if (!s.Human && s.Offer.Length > 0) s.Choice = Random.Range(0, s.Offer.Length);
+                    var offer = Draw(hand.ToList(), n);
+                    foreach (var s in hand)
+                    {
+                        s.Offer = offer;
+                        if (!s.Human && offer.Length > 0) s.Choice = Random.Range(0, offer.Length);
+                    }
                 }
             }
             if (Seats.All(s => s.Offer.Length == 0)) return false; // nothing left to offer
@@ -174,8 +182,8 @@ namespace CP99Online.Rounds
             }
         }
 
-        /// <summary>Up to n different random cards the seat may still take (weighted by Rarity).</summary>
-        private static string[] Draw(Seat seat, int n)
+        /// <summary>Up to n different random cards every one of these seats may still take (weighted by Rarity).</summary>
+        private static string[] Draw(List<Seat> hand, int n)
         {
             var forced = System.Environment.GetEnvironmentVariable("CP99_ROUNDS_CARD"); // tests: offer exactly these cards
             if (!string.IsNullOrEmpty(forced))
@@ -184,7 +192,8 @@ namespace CP99Online.Rounds
                 if (list.Length > 0) return list;
             }
             var pool = UltraPuck.Cards.All
-                .Where(c => c.Rarity > 0f && RoundsMode.IsCardEnabled(c.Id) && (c.MaxPerPlayer <= 0 || seat.Cards.Count(id => id == c.Id) < c.MaxPerPlayer))
+                .Where(c => c.Rarity > 0f && RoundsMode.IsCardEnabled(c.Id))
+                .Where(c => hand.All(seat => (c.MaxPerPlayer <= 0 || seat.Cards.Count(id => id == c.Id) < c.MaxPerPlayer) && CanOffer(c, seat)))
                 .ToList();
             var picked = new List<string>();
             while (picked.Count < n && pool.Count > 0)
@@ -197,6 +206,13 @@ namespace CP99Online.Rounds
                 pool.RemoveAt(i);
             }
             return picked.ToArray();
+        }
+
+        /// <summary>The card's own rule (e.g. Friendly Fire needs a team of 2 or more; bots count).</summary>
+        private static bool CanOffer(UltraCard c, Seat seat)
+        {
+            try { return c.CanOffer(Seats.Count(s => s.Team == seat.Team)); }
+            catch (System.Exception ex) { Plugin.Logger_.LogError("Card " + c.Id + " CanOffer failed: " + ex); return false; }
         }
 
         // ------------------------------------------------------------------ picking

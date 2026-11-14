@@ -7,8 +7,9 @@ using UnityEngine;
 namespace CP99Online.Rounds
 {
     /// <summary>
-    /// Rounds Mode on screen: the card select screen (one row per player picking on this PC, so online each
-    /// person only sees their own cards), the reveal, and everyone's cards in the lower-left corner
+    /// Rounds Mode on screen: the card select screen (one row of cards per hand picking on this PC, so online each
+    /// person only sees their own cards; players on one PC who share a hand share a row, each with their name as a
+    /// cursor above the card they're on), the reveal, and everyone's cards in the lower-left corner
     /// (hover a card for details). Also drives CardGame on the host / offline.
     /// </summary>
     internal sealed class CardUI : MonoBehaviour
@@ -188,10 +189,25 @@ namespace CP99Online.Rounds
             if (_tipTitle != null) DrawTooltip(u);
         }
 
+        /// <summary>This PC's pickers, grouped by the hand they were dealt (one row each).</summary>
+        private List<List<int>> Rows()
+        {
+            var rows = new List<List<int>>();
+            foreach (var i in LocalPickers())
+            {
+                var offer = CardGame.Seats[i].Offer;
+                var row = rows.FirstOrDefault(r => SameHand(CardGame.Seats[r[0]].Offer, offer));
+                if (row != null) row.Add(i); else rows.Add(new List<int> { i });
+            }
+            return rows;
+        }
+
+        private static bool SameHand(string[] a, string[] b) { return a == b || (a.Length == b.Length && a.SequenceEqual(b)); }
+
         private void DrawPicking(float u)
         {
             var team = CardGame.TeamMode;
-            var rows = LocalPickers();
+            var rows = Rows();
             var left = CardGame.SecondsLeft;
             var progress = "   " + CardGame.PickedCount + "/" + CardGame.PickerCount + " picked" +
                 (left >= 0f ? "   " + Mathf.CeilToInt(left) + "s" : string.Empty);
@@ -212,34 +228,76 @@ namespace CP99Online.Rounds
             var top = 112 * u;
             var avail = Screen.height * 0.70f;
             var rowH = avail / rows.Count;
-            var cardH = Mathf.Min(320 * u, rowH - 36 * u);
+            var maxTags = rows.Max(r => r.Count);
+            var tagH = 22 * u;
+            var tagsH = maxTags > 1 ? maxTags * tagH : 0f; // room above the cards for the name cursors
+            var cardH = Mathf.Min(320 * u, rowH - 36 * u - tagsH);
             var cardW = cardH * 0.7f;
             var gap = 18 * u;
             for (var r = 0; r < rows.Count; r++)
             {
-                var i = rows[r];
-                var s = CardGame.Seats[i];
+                var row = rows[r];
+                var first = CardGame.Seats[row[0]];
+                var offer = first.Offer;
                 var y = top + r * rowH;
-                var status = s.Choice >= 0
-                    ? (team ? "Voted: " : "Picked: ") + CardName(s.Offer[s.Choice]) + "  (you can still change it)"
-                    : "Stick / arrows to choose, A / Space / Enter / 1-" + s.Offer.Length + " to pick, or click a card";
-                var nameStyle = new GUIStyle(_sub) { alignment = TextAnchor.MiddleCenter };
-                nameStyle.normal.textColor = TeamColor(s.Team);
-                Label(new Rect(0, y, Screen.width, 26 * u), s.Name + "  -  " + status, nameStyle);
-
-                var total = s.Offer.Length * cardW + (s.Offer.Length - 1) * gap;
-                var x0 = (Screen.width - total) / 2f;
-                var cur = CursorOf(i, s);
-                for (var k = 0; k < s.Offer.Length; k++)
+                var help = "Stick / arrows to choose, A / Space / Enter / 1-" + offer.Length + " to pick, or click a card";
+                string header;
+                if (row.Count == 1)
                 {
-                    var rect = new Rect(x0 + k * (cardW + gap), y + 30 * u, cardW, cardH);
-                    var votes = team ? CardGame.Seats.Count(o => o.Team == s.Team && o.Offer == s.Offer && o.Choice == k) : 0;
+                    header = first.Name + "  -  " + (first.Choice >= 0
+                        ? (team ? "Voted: " : "Picked: ") + CardName(offer[first.Choice]) + "  (you can still change it)"
+                        : help);
+                }
+                else
+                {
+                    var done = row.Count(i => CardGame.Seats[i].Choice >= 0);
+                    header = (team ? "Each of you votes" : "Each of you picks") + " with your own controller  -  " + done + "/" + row.Count + (team ? " voted" : " picked");
+                }
+                var nameStyle = new GUIStyle(_sub) { alignment = TextAnchor.MiddleCenter };
+                nameStyle.normal.textColor = row.Count == 1 ? TeamColor(first.Team) : Color.white;
+                Label(new Rect(0, y, Screen.width, 26 * u), header, nameStyle);
+
+                var cardsY = y + 30 * u + tagsH;
+                var total = offer.Length * cardW + (offer.Length - 1) * gap;
+                var x0 = (Screen.width - total) / 2f;
+                for (var k = 0; k < offer.Length; k++)
+                {
+                    var rect = new Rect(x0 + k * (cardW + gap), cardsY, cardW, cardH);
+                    var votes = team ? CardGame.Seats.Count(o => o.Team == first.Team && SameHand(o.Offer, offer) && o.Choice == k) : 0;
                     var footer = team ? (votes == 1 ? "1 vote" : votes + " votes") : (k + 1).ToString();
-                    var selected = k == cur;
-                    var chosen = k == s.Choice;
-                    if (DrawCard(rect, s.Offer[k], selected, chosen, s.Choice >= 0 && !chosen, footer, u)) Pick(i, k);
+                    var on = row.Where(i => CursorOf(i, CardGame.Seats[i]) == k).ToList();
+                    var picked = row.Where(i => CardGame.Seats[i].Choice == k).ToList();
+                    var selected = on.Count > 0;
+                    var chosen = picked.Count > 0;
+                    var dim = !chosen && row.All(i => CardGame.Seats[i].Choice >= 0);
+                    if (DrawCard(rect, offer[k], selected, chosen, dim, footer, u)) Pick(ClickPicker(row), k);
+
+                    // name cursors: everyone on this card, stacked above it (a tick once they've picked it)
+                    if (row.Count > 1)
+                    {
+                        var stack = 0;
+                        foreach (var i in on.Union(picked))
+                        {
+                            var seat = CardGame.Seats[i];
+                            var tag = new Rect(rect.x - 6 * u, cardsY - (stack + 1) * tagH, rect.width + 12 * u, tagH - 2 * u);
+                            var c = TeamColor(seat.Team);
+                            Fill(tag, new Color(c.r * 0.45f, c.g * 0.45f, c.b * 0.45f, 0.95f));
+                            var mine = seat.Choice == k;
+                            if (mine) Outline(tag, new Color(1f, 0.85f, 0.25f), Mathf.Max(1f, 2 * u));
+                            var tagStyle = new GUIStyle(_chip) { fontStyle = FontStyle.Bold };
+                            Label(tag, seat.Name + (mine ? "  - picked" : string.Empty), tagStyle); // plain text: the game's font may have no tick mark
+                            stack++;
+                        }
+                    }
                 }
             }
+        }
+
+        /// <summary>A mouse click in a shared row: the first player there who hasn't picked yet (else the first).</summary>
+        private static int ClickPicker(List<int> row)
+        {
+            foreach (var i in row) if (CardGame.Seats[i].Choice < 0) return i;
+            return row[0];
         }
 
         private void DrawReveal(float u)

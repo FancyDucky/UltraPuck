@@ -1,61 +1,37 @@
 using System.Collections.Generic;
 using System.Linq;
 using CP99Online.Net;
-using HarmonyLib;
 using UnityEngine;
 
 namespace CP99Online
 {
     /// <summary>
-    /// Bot switching, like FIFA/NHL: press X (Xbox) / Square (PlayStation) / E (keyboard) to take over the bot
-    /// teammate nearest the puck. The ball you leave is played by the AI until you come back to it.
+    /// Bot swapping: press X (Xbox) / Square (PlayStation) / E (keyboard) and you trade places with a bot teammate:
+    /// you jump to where it was (facing its way, with its speed) and it jumps to where you were. You always keep
+    /// your own player. The first press picks the bot nearest the puck; pressing again soon after moves on to the
+    /// next bot, so with several bots you can cycle through them. If the bot you swap with has the puck, the puck
+    /// comes with the swap: you end up holding it.
     ///
-    /// Every human has a "home" ball (the one spawned for them) and a "body" (the ball they control right now).
-    /// Cards, stats and the ball's symbol stay with each ball; the controlling human's name tag moves with them.
-    /// The host (or the only PC) decides switches; online clients ask with a counter in their input message and
-    /// get the result as Msg.Possess, which only changes what they draw (name tags, robot markers, mouse aim).
+    /// When a bot gets the puck on a team with people on it, one of those people (at random) swaps with it
+    /// automatically, so a person always ends up with the puck.
     ///
-    /// Input: the body gets the home ball's input names. Online, remote players' names are "NET|homeSlot|..",
-    /// which NetInput resolves to that player's controls on any ball, so nothing else in the input path moves.
+    /// The host (or the only PC) decides swaps; positions reach clients in the normal snapshots. Online clients
+    /// ask with a counter in their input message.
     /// </summary>
     internal sealed class Possession : MonoBehaviour
     {
-        private sealed class Names
-        {
-            public string X1, Y1, X2, Y2, ChargeAxis, Shoot, ShootAlt, Charge, ChargeAlt, Sprint, SprintAlt, CallPass;
-
-            public static Names Of(BallInput i)
-            {
-                return new Names
-                {
-                    X1 = i.axisName_x1, Y1 = i.axisName_y1, X2 = i.axisName_x2, Y2 = i.axisName_y2, ChargeAxis = i.axisName_charge,
-                    Shoot = i.buttonName_shoot, ShootAlt = i.buttonName_shootAlt, Charge = i.buttonName_charge, ChargeAlt = i.buttonName_chargeAlt,
-                    Sprint = i.buttonName_sprint, SprintAlt = i.buttonName_sprintAlt, CallPass = i.buttonName_callPass,
-                };
-            }
-
-            public void To(BallInput i)
-            {
-                i.axisName_x1 = X1; i.axisName_y1 = Y1; i.axisName_x2 = X2; i.axisName_y2 = Y2; i.axisName_charge = ChargeAxis;
-                i.buttonName_shoot = Shoot; i.buttonName_shootAlt = ShootAlt; i.buttonName_charge = Charge; i.buttonName_chargeAlt = ChargeAlt;
-                i.buttonName_sprint = Sprint; i.buttonName_sprintAlt = SprintAlt; i.buttonName_callPass = CallPass;
-            }
-        }
-
         private const float Cooldown = 0.25f;
+        private const float CycleWindow = 3f; // presses this close together move on to the next bot
         private const KeyCode KeyboardKey = KeyCode.E;
 
-        private static readonly Dictionary<BallData, BallData> _body = new Dictionary<BallData, BallData>();       // home -> body (only while away)
-        private static readonly Dictionary<BallData, BallData> _controller = new Dictionary<BallData, BallData>(); // body -> home
-        private static readonly Dictionary<BallData, Names> _homeNames = new Dictionary<BallData, Names>();       // a human's own input names
-        private static readonly Dictionary<BallData, Names> _botNames = new Dictionary<BallData, Names>();        // a bot's names before it was taken
-        private static readonly Dictionary<BallData, float> _lastSwitch = new Dictionary<BallData, float>();
-        private static Names _anyBotNames;
+        private sealed class Cycle { public float At; public List<BallData> Order = new List<BallData>(); public int Next; }
+        private static readonly Dictionary<BallData, Cycle> _cycle = new Dictionary<BallData, Cycle>();
+        private static readonly Dictionary<BallData, float> _lastSwap = new Dictionary<BallData, float>();
+        private static BallData _lastCarrier;
 
-        /// <summary>Client: switch presses so far (sent in every input message).</summary>
+        /// <summary>Client: swap presses so far by this PC's player (by slot), sent in every input message.</summary>
         internal static readonly Dictionary<int, byte> ClientSwitchCounts = new Dictionary<int, byte>();
 
-        /// <summary>Client: switch presses so far by this PC's player (by home slot).</summary>
         internal static byte ClientSwitchCountOf(int slot)
         {
             byte n;
@@ -64,41 +40,14 @@ namespace CP99Online
 
         internal static void ClientPressSwitch(int slot) { ClientSwitchCounts[slot] = (byte)(ClientSwitchCountOf(slot) + 1); }
 
-        /// <summary>Has anyone switched this match? (Until then everything behaves exactly like the game.)</summary>
-        internal static bool Any { get { return _body.Count > 0 || _touched; } }
-        private static bool _touched;
-
-        internal static void Clear()
-        {
-            _body.Clear(); _controller.Clear(); _homeNames.Clear(); _botNames.Clear(); _lastSwitch.Clear();
-            _anyBotNames = null; _touched = false; _lastCarrier = null;
-        }
+        internal static void Clear() { _cycle.Clear(); _lastSwap.Clear(); _lastCarrier = null; }
 
         private void OnLevelWasLoaded(int level) { Clear(); }
 
-        /// <summary>The ball this human (by home ball) controls right now.</summary>
-        internal static BallData BodyOf(BallData home)
-        {
-            BallData b;
-            return home != null && _body.TryGetValue(home, out b) && b != null ? b : home;
-        }
-
-        /// <summary>The human (home ball) whose controls drive this ball, or null when the AI plays it.</summary>
-        internal static BallData ControllerOf(BallData ball)
-        {
-            if (ball == null) return null;
-            BallData home;
-            if (_controller.TryGetValue(ball, out home) && home != null) return home;
-            if (_body.ContainsKey(ball)) return null; // a human who is away: the AI plays their ball
-            return ball.playerData != null && !ball.playerData.AI ? ball : null;
-        }
-
-        /// <summary>Host: the slot whose network input drives this ball (-1 = none / the AI).</summary>
-        internal static int InputSlot(BallData ball)
-        {
-            var c = ControllerOf(ball);
-            return c != null ? Match.Slot(c) : -1;
-        }
+        // Everyone keeps their own player now, so these are simple (kept for the input and mouse-aim code).
+        internal static BallData BodyOf(BallData home) { return home; }
+        internal static BallData ControllerOf(BallData ball) { return ball != null && ball.playerData != null && !ball.playerData.AI ? ball : null; }
+        internal static int InputSlot(BallData ball) { var c = ControllerOf(ball); return c != null ? Match.Slot(c) : -1; }
 
         // ------------------------------------------------------------------ input
 
@@ -115,221 +64,149 @@ namespace CP99Online
                 foreach (var slot in Match.LocalSlots)
                 {
                     var mine = Match.Ball(slot);
-                    if (mine != null && Pressed(Names.Of(mine.GetComponent<BallInput>()))) ClientPressSwitch(slot);
+                    if (mine != null && Pressed(mine.GetComponent<BallInput>())) ClientPressSwitch(slot);
                 }
                 return;
             }
 
             foreach (var t in gm.teams)
-                foreach (var home in t.members.ToArray())
+                foreach (var me in t.members.ToArray())
                 {
-                    if (home == null || home.playerData == null || home.playerData.AI) continue;
-                    if (NetSession.HostInMatch && Match.IsRemote(Match.Slot(home))) continue; // asks over the network
-                    if (Pressed(HomeNames(home))) Request(home);
+                    if (me == null || me.playerData == null || me.playerData.AI) continue;
+                    if (NetSession.HostInMatch && Match.IsRemote(Match.Slot(me))) continue; // asks over the network
+                    if (Pressed(me.GetComponent<BallInput>())) Request(me);
                 }
 
             if (NetSession.HostInMatch)
                 foreach (var kv in NetInput.BySlot.ToList())
                     if (kv.Value != null && kv.Value.SwitchDown()) Request(Match.Ball(kv.Key));
 
-            AutoSwitch(gm);
+            AutoSwap(gm);
         }
 
-        private static BallData _lastCarrier;
+        /// <summary>X on this player's controller (X_P1.. / X_ALL), or E on the keyboard.</summary>
+        private static bool Pressed(BallInput i)
+        {
+            if (i == null || string.IsNullOrEmpty(i.buttonName_shoot)) return false;
+            if (i.buttonName_shoot == "ShootKeyboard") return Input.GetKeyDown(KeyboardKey);
+            if (!i.buttonName_shoot.StartsWith("R1_")) return false;
+            var x = "X_" + i.buttonName_shoot.Substring(3);
+            try { return Input.GetButtonDown(x); }
+            catch { return x == "X_ALL" && Input.GetKeyDown(KeyCode.JoystickButton2); } // no such button: X on any controller
+        }
 
-        /// <summary>
-        /// A bot on a team with humans just got the puck: one of those humans takes it over (the player whose own
-        /// ball it is, if a human is away from theirs; otherwise a random human on that team).
-        /// </summary>
         private static readonly bool NoAutoTest = System.Environment.GetEnvironmentVariable("CP99_TEST_NOAUTO") == "1"; // tests with an idle host player
 
-        private static void AutoSwitch(GameManager gm)
+        /// <summary>A bot on a team with people on it just got the puck: one of those people swaps with it (and gets the puck).</summary>
+        private static void AutoSwap(GameManager gm)
         {
             if (NoAutoTest) return;
             var p = gm.puck.GetComponent<Puck>();
             var carrier = p != null && p.carryer != null ? p.carryer.GetComponent<BallData>() : null;
             if (carrier == _lastCarrier) return;
             _lastCarrier = carrier;
-            if (carrier == null || ControllerOf(carrier) != null || Rounds.CardGame.PhaseActive || carrier.team == null) return;
-            var humans = carrier.team.members.Where(m => m != null && m.playerData != null && !m.playerData.AI).ToList();
-            if (humans.Count == 0) return;
-            if (NetSession.HostInMatch) humans.RemoveAll(h => Match.IsRemote(Match.Slot(h)) && !NetInput.BySlot.ContainsKey(Match.Slot(h))); // left the game
-            var home = humans.Contains(carrier) ? carrier : (humans.Count > 0 ? humans[Random.Range(0, humans.Count)] : null);
-            if (home == null) return;
-            _lastSwitch[home] = Time.time;
-            Move(home, carrier);
-            NetLog.Info(home == carrier ? "Switch: " + Name(home) + "'s own player got the puck while the AI played it; they take it back"
-                : "Switch: bot " + Name(carrier) + " got the puck; " + Name(home) + " takes over");
-            if (NetSession.HostInMatch) NetSession.Instance.HostSendPossession();
+            if (carrier == null || carrier.playerData == null || !carrier.playerData.AI || Rounds.CardGame.PhaseActive || carrier.team == null) return;
+            if (gm.startCountdown > 0f || gm.roundOver) return;
+            var people = carrier.team.members.Where(m => m != null && m.playerData != null && !m.playerData.AI && m.alive && !m.fallen).ToList();
+            if (NetSession.HostInMatch) people.RemoveAll(h => Match.IsRemote(Match.Slot(h)) && !NetInput.BySlot.ContainsKey(Match.Slot(h))); // left the game
+            if (people.Count == 0) return;
+            var me = people[Random.Range(0, people.Count)];
+            _lastSwap[me] = Time.time;
+            Swap(me, carrier);
+            NetLog.Info("Swap: bot " + Name(carrier) + " got the puck; " + Name(me) + " swaps places with it");
         }
 
-        /// <summary>X on this player's controller (X_P1.. / X_ALL), or E on the keyboard.</summary>
-        private static bool Pressed(Names n)
-        {
-            if (n == null || string.IsNullOrEmpty(n.Shoot)) return false;
-            if (n.Shoot == "ShootKeyboard") return Input.GetKeyDown(KeyboardKey);
-            string x = null;
-            if (n.Shoot.StartsWith("R1_")) x = "X_" + n.Shoot.Substring(3);
-            if (x == null) return false;
-            try { return Input.GetButtonDown(x); }
-            catch { return x == "X_ALL" && Input.GetKeyDown(KeyCode.JoystickButton2); } // no such button: X on any controller
-        }
+        // ------------------------------------------------------------------ swapping (host / offline)
 
-        private static Names HomeNames(BallData home)
+        /// <summary>Host / offline: this person pressed swap.</summary>
+        internal static void Request(BallData me)
         {
-            Names n;
-            if (!_homeNames.TryGetValue(home, out n)) _homeNames[home] = n = Names.Of(home.GetComponent<BallInput>());
-            return n;
-        }
-
-        // ------------------------------------------------------------------ switching (host / offline)
-
-        /// <summary>Host / offline: this human (by home ball) pressed switch.</summary>
-        internal static void Request(BallData home)
-        {
-            if (home == null || home.playerData == null || home.playerData.AI || !Rounds.CardGame.IsAuthority) return;
+            if (me == null || me.playerData == null || me.playerData.AI || !Rounds.CardGame.IsAuthority) return;
             var gm = Globals.gameManager;
+            if (gm == null || gm.startCountdown > 0f || gm.roundOver || Rounds.CardGame.PhaseActive) return;
+            if (!me.alive || me.fallen || me.carryObject != null) return; // not while you have the puck
+            var now = Time.time;
             float last;
-            if (_lastSwitch.TryGetValue(home, out last) && Time.time - last < Cooldown) return;
-            var body = BodyOf(home);
-            if (body.carryObject != null) return; // not while you have the puck
-            var puck = (Vector2)gm.puck.transform.position;
-            var target = home.team.members
-                .Where(m => m != null && m != body && m.alive && !m.fallen && m.playerData != null)
-                .Where(m => m == home || (m.playerData.AI && !_controller.ContainsKey(m)))
-                .OrderBy(m => Vector2.Distance(m.transform.position, puck))
-                .FirstOrDefault();
-            if (target == null) return;
-            _lastSwitch[home] = Time.time;
-            Move(home, target);
-            NetLog.Info("Switch: " + Name(home) + " now controls " + (target == home ? "their own player" : "bot " + Name(target)));
-            if (NetSession.HostInMatch) NetSession.Instance.HostSendPossession();
-        }
+            if (_lastSwap.TryGetValue(me, out last) && now - last < Cooldown) return;
 
-        /// <summary>Host: a player left; give their body back to the AI and put their own ball back.</summary>
-        internal static void Release(BallData home)
-        {
-            if (home == null || !_body.ContainsKey(home)) return;
-            Move(home, home);
-            if (NetSession.HostInMatch) NetSession.Instance.HostSendPossession();
-        }
-
-        private static void Move(BallData home, BallData target)
-        {
-            var names = HomeNames(home);
-            var body = BodyOf(home);
-            _touched = true;
-            if (target != home && !_botNames.ContainsKey(target)) _botNames[target] = Names.Of(target.GetComponent<BallInput>());
-            if (_anyBotNames == null && target != home) _anyBotNames = _botNames[target];
-
-            // the ball we leave goes to the AI
-            Names leaveAs;
-            if (!_botNames.TryGetValue(body, out leaveAs)) leaveAs = _anyBotNames ?? new Names();
-            MakeBot(body, leaveAs);
-            _controller.Remove(body);
-
-            MakeHuman(target, names);
-            if (target == home) _body.Remove(home);
-            else { _body[home] = target; _controller[target] = home; }
-            RefreshMarkers();
-        }
-
-        private static void MakeBot(BallData b, Names names)
-        {
-            b.AI = true;
-            names.To(b.GetComponent<BallInput>());
-            var h = b.GetComponent<BallHandling>();
-            if (h != null) { h.AICharging = false; if (h.ballCharge > 0f) h.ResetCharge(); }
-            var ai = b.GetComponent<BallAI_v2>();
-            if (ai != null)
+            var bots = me.team.members.Where(m => m != null && m != me && m.alive && !m.fallen && m.playerData != null && m.playerData.AI).ToList();
+            if (bots.Count == 0) return;
+            Cycle c;
+            if (!_cycle.TryGetValue(me, out c) || now - c.At > CycleWindow || c.Order.Count == 0 || c.Order.Any(b => !bots.Contains(b)) || bots.Any(b => !c.Order.Contains(b)))
             {
-                var t = Globals.gameManager.teams.IndexOf(b.team);
-                if (b.playerData != null && !b.playerData.AI && t >= 0 && AIDifficultyManager.skill_shooting != null && t < AIDifficultyManager.skill_shooting.Length)
-                {
-                    ai.skill_aggression = AIDifficultyManager.skill_aggression[t];
-                    ai.skill_agility = AIDifficultyManager.skill_agility[t];
-                    ai.skill_goaltending = AIDifficultyManager.skill_goaltending[t];
-                    ai.skill_shooting = AIDifficultyManager.skill_shooting[t];
-                }
-                ai.enabled = true;
+                // a fresh cycle: nearest the puck first
+                var puck = (Vector2)gm.puck.transform.position;
+                _cycle[me] = c = new Cycle { Order = bots.OrderBy(b => Vector2.Distance(b.transform.position, puck)).ToList() };
             }
+            var target = c.Order[c.Next % c.Order.Count];
+            c.Next++;
+            c.At = now;
+            _lastSwap[me] = now;
+            Swap(me, target);
+            NetLog.Info("Swap: " + Name(me) + " swapped places with bot " + Name(target) + (c.Order.Count > 1 ? " (" + ((c.Next - 1) % c.Order.Count + 1) + " of " + c.Order.Count + ")" : string.Empty));
         }
 
-        private static void MakeHuman(BallData b, Names names)
-        {
-            var ai = b.GetComponent<BallAI_v2>();
-            if (ai != null) ai.enabled = false;
-            b.AI = false;
-            var input = b.GetComponent<BallInput>();
-            names.To(input);
-            input.axis1Input = input.axis2Input = Vector2.zero;
-            var h = b.GetComponent<BallHandling>();
-            if (h != null) { h.AICharging = false; if (h.ballCharge > 0f) h.ResetCharge(); }
-        }
+        /// <summary>Host: a player left (nothing to undo any more: everyone keeps their own player).</summary>
+        internal static void Release(BallData home) { }
 
-        /// <summary>Robot marker on every ball the AI plays; name tags on every ball (the patch decides the text).</summary>
-        private static void RefreshMarkers()
+        /// <summary>Trade places (position, facing, speed); the puck goes to the person if the bot had it.</summary>
+        private static void Swap(BallData me, BallData bot)
         {
+            var mr = me.GetComponent<Rigidbody2D>();
+            var br = bot.GetComponent<Rigidbody2D>();
+            Vector3 mp = me.transform.position, bp = bot.transform.position;
+            Quaternion mq = me.transform.rotation, bq = bot.transform.rotation;
+            var mv = mr != null ? mr.velocity : Vector2.zero;
+            var bv = br != null ? br.velocity : Vector2.zero;
+
+            var puck = bot.carryObject;
+            if (puck != null)
+            {
+                var bh = bot.GetComponent<BallHandling>();
+                if (bh != null) bh.Drop(puck, 0.5f, false); // the bot can't grab it straight back
+            }
+
+            Place(me, mr, new Vector3(bp.x, bp.y, mp.z), bq, bv);
+            Place(bot, br, new Vector3(mp.x, mp.y, bp.z), mq, mv);
+
+            if (puck != null)
+            {
+                var mh = me.GetComponent<BallHandling>();
+                if (mh != null) mh.Carry(puck);
+            }
+
             var gm = Globals.gameManager;
-            if (gm == null) return;
-            foreach (var t in gm.teams)
-                foreach (var b in t.members)
-                {
-                    if (b == null) continue;
-                    if (b.robotIndicator != null) b.robotIndicator.SetActive(ControllerOf(b) == null);
-                    var tag = b.GetComponent<BallNameTag>();
-                    if (tag != null) { tag.enabled = true; if (tag.nameTag != null) tag.nameTag.gameObject.SetActive(true); }
-                }
-        }
-
-        // ------------------------------------------------------------------ online
-
-        /// <summary>(home slot, body slot) for every human who is away from their own ball.</summary>
-        internal static List<KeyValuePair<int, int>> State()
-        {
-            return _body.Where(kv => kv.Key != null && kv.Value != null)
-                .Select(kv => new KeyValuePair<int, int>(Match.Slot(kv.Key), Match.Slot(kv.Value)))
-                .Where(kv => kv.Key >= 0 && kv.Value >= 0).ToList();
-        }
-
-        /// <summary>Client: the host's switch state (only changes what this PC draws).</summary>
-        internal static void ClientApply(List<KeyValuePair<int, int>> state)
-        {
-            _body.Clear(); _controller.Clear(); _touched = true;
-            foreach (var kv in state)
+            if (gm != null && gm.particleManager != null && gm.particleManager.respawnParticlesPrefabs != null)
             {
-                var home = Match.Ball(kv.Key);
-                var body = Match.Ball(kv.Value);
-                if (home == null || body == null || home == body) continue;
-                _body[home] = body;
-                _controller[body] = home;
+                // a puff at both spots
+                foreach (var b in new[] { me, bot })
+                {
+                    var i = (int)b.team.teamColor;
+                    if (i < 0 || i >= gm.particleManager.respawnParticlesPrefabs.Length) continue;
+                    var fx = Object.Instantiate(gm.particleManager.respawnParticlesPrefabs[i], b.transform.position + Vector3.back / 2f, Quaternion.identity) as GameObject;
+                    Object.Destroy(fx, 2f);
+                }
             }
-            RefreshMarkers();
+        }
+
+        // BallHandling turns the ball to this angle every frame, so it has to move with the swap too
+        private static readonly HarmonyLib.AccessTools.FieldRef<BallHandling, float> ZRot =
+            HarmonyLib.AccessTools.FieldRefAccess<BallHandling, float>("currentZRot");
+
+        private static void Place(BallData b, Rigidbody2D rb, Vector3 pos, Quaternion rot, Vector2 vel)
+        {
+            b.transform.position = pos;
+            b.transform.rotation = rot;
+            if (rb != null) { rb.position = pos; rb.rotation = rot.eulerAngles.z; rb.velocity = vel; }
+            var h = b.GetComponent<BallHandling>();
+            if (h != null) ZRot(h) = rot.eulerAngles.z;
         }
 
         private static string Name(BallData b) { return b.playerData != null && b.playerData.account != null ? b.playerData.account.name : "?"; }
-    }
 
-    /// <summary>After a switch, the controlling human's name tag is shown over the ball they control.</summary>
-    [HarmonyPatch(typeof(BallNameTag), "LateUpdate")]
-    internal static class PossessionNameTagPatch
-    {
-        private static bool Prefix(BallNameTag __instance)
-        {
-            if (!Possession.Any) return true;
-            var tag = __instance.nameTag;
-            if (tag == null) return false;
-            var b = __instance.GetComponent<BallData>();
-            var who = Possession.ControllerOf(b);
-            if (who == null || !b.alive || b.fallen || who.playerData == null || who.playerData.account == null) { tag.text = string.Empty; return false; }
-            var gm = Globals.gameManager;
-            var size = gm != null && gm.gameCam != null ? gm.gameCam.GetComponent<Camera>().orthographicSize : 9f;
-            var t = tag.gameObject.transform;
-            t.position = __instance.transform.position + Vector3.up * Map.map(size, 7f, 12f, 0.45f, 0.65f) - Vector3.forward;
-            t.rotation = Quaternion.identity;
-            t.localScale = Vector3.one * Map.map(size, 7f, 12f, 0.1f, 0.17f);
-            tag.text = who.playerData.account.name;
-            return false;
-        }
+        // ------------------------------------------------------------------ online (no longer used: positions travel in snapshots)
+
+        internal static List<KeyValuePair<int, int>> State() { return new List<KeyValuePair<int, int>>(); }
+        internal static void ClientApply(List<KeyValuePair<int, int>> state) { }
     }
 }

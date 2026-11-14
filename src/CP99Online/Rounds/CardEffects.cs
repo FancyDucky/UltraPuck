@@ -51,6 +51,29 @@ namespace CP99Online.Rounds
 
         internal static float OverChargeOf(CardStats st) { return Mathf.Clamp(st.OverCharge, 0f, MaxOverCharge); }
 
+        // ------------------------------------------------------------------ Friendly Fire: teammate boost
+
+        internal const float TeammateBoost = 1.8f, TeammateBoostSeconds = 4f;
+        private static readonly Dictionary<BallData, float> _boostUntil = new Dictionary<BallData, float>();
+
+        /// <summary>Move speed multiplier from a teammate's dash (Friendly Fire), else 1.</summary>
+        internal static float BoostFactor(BallData b)
+        {
+            float until;
+            return b != null && _boostUntil.TryGetValue(b, out until) && Time.time < until ? TeammateBoost : 1f;
+        }
+
+        /// <summary>Host / offline: <paramref name="from"/>'s dash hit <paramref name="target"/>.</summary>
+        internal static void OnDashHit(BallData from, BallData target)
+        {
+            if (from == null || target == null || from == target || from.team != target.team) return;
+            var a = AppliedOf(target);
+            if (a == null || !a.Stats.TeammateBoost) return;
+            var fresh = BoostFactor(target) <= 1f;
+            _boostUntil[target] = Time.time + TeammateBoostSeconds;
+            if (fresh) Net.NetLog.Info("Friendly Fire: " + target.name + " got a speed boost from a teammate's dash");
+        }
+
         /// <summary>
         /// Over Charge: how far this player's charge may fill (replaces the game's 3). Shot power is the charge itself,
         /// so a charge of 4.5 (one card, held to the end) hits 50% harder than a normal full charge.
@@ -71,6 +94,7 @@ namespace CP99Online.Rounds
             _orig.Clear();
             _applied.Clear();
             _dash.Clear();
+            _boostUntil.Clear();
             CardObjects.Clear();
         }
 
@@ -242,11 +266,39 @@ namespace CP99Online.Rounds
             return Mathf.Max(c.bounds.extents.x, c.bounds.extents.y);
         }
 
-        /// <summary>Head Start: after a face-off reset, move each player part of the way toward the puck.</summary>
+        /// <summary>
+        /// Head Start: at every face-off, the team with the most Head Start cards starts with the puck (a random player
+        /// on it gets it). A tie, including both teams having none, leaves the puck in the middle. In Team Vote
+        /// everyone on a team gets the team's card, so it counts once per team there.
+        /// </summary>
+        private static void HeadStartPuck(GameManager gm)
+        {
+            var seats = CardGame.Seats;
+            if (seats.Count == 0) return;
+            var count = new Dictionary<int, int>();
+            foreach (var t in seats.Select(s => s.Team).Distinct())
+            {
+                var per = seats.Where(s => s.Team == t).Select(s => StatsOf(s).HeadStart).ToList();
+                count[t] = CardGame.TeamMode ? per.Max() : per.Sum();
+            }
+            var best = count.Values.Max();
+            if (best <= 0 || count.Values.Count(v => v == best) > 1) return;
+            var team = count.First(kv => kv.Value == best).Key;
+            var players = seats.Where(s => s.Team == team && s.Ball != null && s.Ball.alive && !s.Ball.fallen).Select(s => s.Ball).ToList();
+            if (players.Count == 0) return;
+            var b = players[Random.Range(0, players.Count)];
+            var h = b.GetComponent<BallHandling>();
+            if (h == null) return;
+            h.Carry(gm.puck);
+            Net.NetLog.Info("Head Start: team " + (team + 1) + " (" + best + " vs " + string.Join("/", count.Values.Select(v => v.ToString()).ToArray()) + ") starts with the puck: " + b.name);
+        }
+
+        /// <summary>Head Start: after a face-off reset, move each player part of the way toward the puck (SpawnCloser, for mods).</summary>
         internal static void AfterFaceOff()
         {
             var gm = Globals.gameManager;
             if (gm == null || gm.puck == null) return;
+            HeadStartPuck(gm);
             var target = gm.puck.transform.position;
             foreach (var kv in _applied)
             {
@@ -319,20 +371,23 @@ namespace CP99Online.Rounds
             }
             if (!Same(st.Size, 1f)) lines.Add(CardText.Stat(Mathf.Clamp(st.Size, 0.3f, 3f), "Size", true, true));
             if (!Same(st.ShotPower, 1f)) lines.Add(CardText.Stat(Mathf.Clamp(st.ShotPower, 0.2f, 5f), "Shot Power", true));
+            if (!Same(st.QuickShotPower, 1f)) lines.Add(CardText.Stat(Mathf.Clamp(st.QuickShotPower, 0.2f, 5f), "Quick Shot Power", true));
             if (!Same(st.ChargeSpeed, 1f)) lines.Add(CardText.Stat(1f / Mathf.Clamp(st.ChargeSpeed, 0.2f, MaxChargeSpeed), "Charge-up Time", false));
             if (st.OverCharge > 0f) lines.Add(CardText.Good("+" + Mathf.RoundToInt(OverChargeOf(st) * 100f) + "% Over Charge") + "  (hold past full for a harder charged shot)");
             if (st.ExtraDashes > 0) lines.Add(CardText.Good("+" + Mathf.Clamp(st.ExtraDashes, 0, 9) + " Dash Charge" + (st.ExtraDashes > 1 ? "s" : string.Empty)) +
                 "  (" + (1 + Mathf.Clamp(st.ExtraDashes, 0, 9)) + " total)");
             if (!Same(st.DashCooldown, 1f))
-                lines.Add(CardText.Stat(Mathf.Clamp(st.DashCooldown, 0.1f, 5f), "Dash Recharge", false) +
+                lines.Add(CardText.Stat(1f / Mathf.Clamp(st.DashCooldown, 0.1f, 5f), "Dash Recharge Speed", true) +
                     "  (" + (GameDashCooldown * Mathf.Clamp(st.DashCooldown, 0.1f, 5f)).ToString("0.0") + " s per charge, normally 2.0 s)");
             if (!Same(st.PickupRange, 1f)) lines.Add(CardText.Stat(st.PickupRange, "Pick-up Range", true));
             if (st.SpawnCloser > 0f) lines.Add(CardText.Stat(1f - Mathf.Clamp(st.SpawnCloser, 0f, 0.6f), "Face-off Distance", false));
+            if (st.HeadStart > 0) lines.Add(CardText.Good("Head Start x" + st.HeadStart) + "  (the team with the most starts face-offs with the puck)");
             if (st.OpponentSpeed < 0.999f) lines.Add(CardText.Stat(st.OpponentSpeed, "Opponent Move Speed", false));
             if (pylons > 0) lines.Add(CardText.Good("+" + Mathf.Min(pylons, 4) + " Pylon Goalie" + (pylons > 1 ? "s" : string.Empty)) + "  (your team's net)");
             if (st.PuckGun) lines.Add("Puck Gun: brake to fire a " + CardText.Good("1 s Stun") + " shot  (2 s cooldown)");
             if (st.Invisibility) lines.Add("Invisibility: brake to turn " + CardText.Good("invisible for 5 s") + "  (12 s cooldown)");
             if (!Same(st.FriendlyFire, 1f)) lines.Add(CardText.Stat(FriendlyFireOf(st), "Teammate Knockback", true) + "  (dashes and Puck Gun)");
+            if (st.TeammateBoost) lines.Add("Friendly Fire: a teammate's dash into you gives " + CardText.Good("+80% Move Speed for 4 s"));
             if (lines.Count == 0) lines.Add("No changes from cards.");
             return lines;
         }
@@ -359,7 +414,7 @@ namespace CP99Online.Rounds
         private static void Postfix(BallData __instance)
         {
             var a = CardEffects.AppliedOf(__instance);
-            if (a != null && CardGame.IsAuthority) __instance.totalSpeed *= a.SpeedFactor;
+            if (a != null && CardGame.IsAuthority) __instance.totalSpeed *= a.SpeedFactor * CardEffects.BoostFactor(__instance);
         }
     }
 

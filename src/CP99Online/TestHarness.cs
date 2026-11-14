@@ -130,7 +130,7 @@ namespace CP99Online
             if (now < _burstAt + _burstStep * 0.35f) return;
             if (_burstStep < 3)
             {
-                var target = Rounds.CardGame.Seats.Where(x => x.Ball != null && x.Team != seat.Team && x.Ball.alive)
+                var target = Rounds.CardGame.Seats.Where(x => x.Ball != null && x != seat && (DashTeam ? x.Team == seat.Team : x.Team != seat.Team) && x.Ball.alive)
                     .OrderBy(x => Vector2.Distance(x.Ball.transform.position, seat.Ball.transform.position)).FirstOrDefault();
                 if (target != null && _burstStep == 0)
                 {
@@ -148,6 +148,16 @@ namespace CP99Online
                     }
                     seat.Ball.transform.rotation = Quaternion.Euler(0f, 0f, Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg - 90f);
                     NetLog.Info("TEST dash: " + seat.Name + " aims at " + target.Name + " (" + d.magnitude.ToString("F1") + " away)");
+                }
+                if (DashTeam && _burstStep == 0 && target != null)
+                {
+                    // Friendly Fire test: the teammate dashes into this player instead
+                    var d2 = seat.Ball.transform.position - target.Ball.transform.position;
+                    target.Ball.transform.rotation = Quaternion.Euler(0f, 0f, Mathf.Atan2(d2.y, d2.x) * Mathf.Rad2Deg - 90f);
+                    var ts = target.Ball.GetComponent<BallShove>();
+                    if (ts.shoveTimer > 0f) ts.shoveTimer = 0f;
+                    ts.Shove();
+                    NetLog.Info("TEST dash: teammate " + target.Name + " dashes into " + seat.Name);
                 }
                 seat.Ball.GetComponent<BallShove>().Shove();
                 var hasGun = Rounds.CardEffects.AppliedOf(seat.Ball) != null && Rounds.CardEffects.AppliedOf(seat.Ball).Stats.PuckGun;
@@ -297,6 +307,9 @@ namespace CP99Online
             box.ChangeStateTo(PlayerBox_V2.PlayerBoxState.SIGNEDIN);
             box.ChangeTeamsTo(team);
         }
+
+        /// <summary>CP99_TEST_DASHTEAM=1 (host): the test dash aims at a teammate (Friendly Fire).</summary>
+        private static readonly bool DashTeam = Environment.GetEnvironmentVariable("CP99_TEST_DASHTEAM") == "1";
 
         /// <summary>CP99_TEST_LOCAL2=1 (client): join with two controllers, as two players on one PC.</summary>
         private static readonly bool TwoLocal = Environment.GetEnvironmentVariable("CP99_TEST_LOCAL2") == "1";

@@ -142,11 +142,12 @@ public class MyMod : UltraMod
 ```
 
 `CardStats` has these multipliers (1 = no change):
-- `MoveSpeed`, `ShotPower`, `ChargeSpeed`, `DashCooldown`, `PickupRange` and `Size`.
+- `MoveSpeed`, `ShotPower` (every shot), `QuickShotPower` (only shots fired without charging), `ChargeSpeed`, `DashCooldown` (recharge time; 0.5 = twice as fast), `PickupRange` and `Size`.
 - `Weight`: heavier means you take less knockback and your dash checks give more. Movement and dash speed are corrected for it.
 - `OpponentSpeed`, which slows every opponent.
 
-It also has `OverCharge` (0.5 = the charge can fill 50% past full, for a 50% harder shot; up to 2), `ExtraDashes`, `SpawnCloser` (0.2 = 20% closer to the puck at each face-off), `Pylons`, `PuckGun` and `FriendlyFire` (how hard you push teammates; 2.5 = +150%).
+It also has `OverCharge` (0.5 = the charge can fill 50% past full, for a 50% harder shot; up to 2), `ExtraDashes`, `SpawnCloser` (0.2 = 20% closer to the puck at each face-off), `HeadStart` (copies: at every face-off the team with the most starts with the puck), `Pylons`, `PuckGun` (brake to fire), `FriendlyFire` (how hard you push teammates; 2.5 = +150%) and `TeammateBoost` (a teammate's dash into you gives +80% move speed for 4 s).
+Override `CanOffer(int teamSize)` to offer a card only to some players (the team size counts bots), and `OnByDefault` to have it start switched off in Toggle Cards.
 For anything else, override `ApplyToBall(BallData ball, int copies)`. It runs on the player's ball when they
 get the card and after every field reset.
 

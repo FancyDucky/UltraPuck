@@ -198,13 +198,16 @@ namespace CP99Online
         private GUIStyle _badgeTitle, _badgeSub;
 
         /// <summary>
-        /// Top-right while hosting: the game keeps hosting after you back out of Play Online, so show it on every
-        /// main menu screen (with how many friends have joined).
+        /// Top-right while hosting or connected to someone's game: the game stays online after you back out of Play
+        /// Online, so show it on every main menu screen (how many friends have joined, or whose game you're in).
         /// </summary>
         private void DrawHostingBadge(float pad)
         {
             var s = Net.NetSession.Instance;
-            if (s == null || s.Role != Net.Role.Host) return;
+            if (s == null) return;
+            var hosting = s.Role == Net.Role.Host;
+            var joined = s.Role == Net.Role.Client;
+            if (!hosting && !joined) return;
             if (_badgeTitle == null)
             {
                 _badgeTitle = new GUIStyle(_versionStyle) { alignment = TextAnchor.MiddleLeft };
@@ -216,9 +219,19 @@ namespace CP99Online
             _badgeTitle.fontSize = Mathf.Max(12, Mathf.RoundToInt(36 * u));
             _badgeSub.fontSize = Mathf.Max(11, Mathf.RoundToInt(26 * u));
 
-            var n = s.ClientCount;
-            var sub = n == 0 ? "Waiting for friends" : n == 1 ? "1 friend joined" : n + " friends joined";
-            var titleW = _badgeTitle.CalcSize(new GUIContent("Hosting")).x;
+            string title, sub;
+            if (hosting)
+            {
+                var n = s.ClientCount;
+                title = "Hosting";
+                sub = n == 0 ? "Waiting for friends" : n == 1 ? "1 friend joined" : n + " friends joined";
+            }
+            else
+            {
+                title = s.Welcomed ? "Connected" : "Connecting";
+                sub = s.Welcomed ? "to " + (string.IsNullOrEmpty(s.HostName) ? "the host" : s.HostName) + "'s game" : "Reaching the host...";
+            }
+            var titleW = _badgeTitle.CalcSize(new GUIContent(title)).x;
             var subW = _badgeSub.CalcSize(new GUIContent(sub)).x;
             var dot = 16 * u;
             var w = Mathf.Max(dot + 12 * u + titleW, subW) + 36 * u;
@@ -234,7 +247,7 @@ namespace CP99Online
             var titleRect = new Rect(r.x + 18 * u, r.y + 8 * u, w - 36 * u, 54 * u);
             GUI.DrawTexture(new Rect(titleRect.x, titleRect.center.y - dot / 2f, dot, dot), Texture2D.whiteTexture);
             GUI.color = old;
-            GUI.Label(new Rect(titleRect.x + dot + 12 * u, titleRect.y, titleW + 4 * u, titleRect.height), "Hosting", _badgeTitle);
+            GUI.Label(new Rect(titleRect.x + dot + 12 * u, titleRect.y, titleW + 4 * u, titleRect.height), title, _badgeTitle);
             GUI.Label(new Rect(titleRect.x, r.y + 60 * u, w - 36 * u, 40 * u), sub, _badgeSub);
         }
 

@@ -265,8 +265,13 @@ namespace CP99Online.Rounds
             Object.DestroyImmediate(go.GetComponent<Collider>());
             go.transform.position = new Vector3(pos.x, pos.y, z - 0.3f);
             go.transform.localScale = Vector3.one * ShotRadius * 2f;
-            go.GetComponent<Renderer>().material.color = Color.Lerp(color, Color.white, 0.2f);
+            var body = go.GetComponent<Renderer>();
+            body.material.color = Color.Lerp(color, Color.white, 0.2f);
+            body.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; // no shadow under the shot
+            body.receiveShadows = false;
             var trail = go.AddComponent<TrailRenderer>();
+            trail.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            trail.receiveShadows = false;
             var shader = Shader.Find("Sprites/Default") ?? Shader.Find("Particles/Alpha Blended");
             if (shader != null) trail.material = new Material(shader);
             trail.time = 0.25f;
