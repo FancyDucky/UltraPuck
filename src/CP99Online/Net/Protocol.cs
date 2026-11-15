@@ -27,7 +27,7 @@ namespace CP99Online.Net
         Nav,            // h->c  str menu path, str element path, i32 goals, f32 game length (GameSelection)
         CardState,      // h->c  Rounds Mode: phase, offers, picks/votes and everyone's cards (see NetSession.Cards)
         CardPick,       // c->h  u8 seat, u8 offer index
-        CardShot,       // h->c  Puck Gun: u8 kind (0 fired: u16 id, u8 team, u8 slot, f32 x, y, vx, vy / 1 ended: u16 id / 2 stunned: u8 slot, f32 seconds / 3 invisible: u8 slot, f32 seconds / 4 Friendly Fire boost: u8 slot, f32 seconds / 5 shockwave: f32 x, y, radius, u8 team, f32 z)
+        CardShot,       // h->c  Puck Gun: u8 kind (0 fired: u16 id, u8 team, u8 slot, f32 x, y, vx, vy / 1 ended: u16 id / 2 stunned: u8 slot, f32 seconds / 3 invisible: u8 slot, f32 seconds / 4 Friendly Fire boost: u8 slot, f32 seconds / 5 shockwave: f32 x, y, radius, u8 team, f32 z, u8 slot, f32 cooldown)
         Pylons,         // h->c  unreliable: u8 n, n x {f32 x, f32 y} Pylon Goalie positions
         Possess,        // h->c  bot switching: u8 n, n x {u8 home slot, u8 controlled slot}
         MapData,        // h->c  custom map for the next match, before StartMatch: u32 hash, u16 index, u16 count, u16 len, bytes (UTF-8 .upmap text)
@@ -48,7 +48,7 @@ namespace CP99Online.Net
 
     internal static class Proto
     {
-        public const ushort Version = 14; // 13 was 0.9.5 - 0.9.9 (14: CardShot kinds 4 boost, 5 shockwave)
+        public const ushort Version = 15; // 14 was 0.10.0 - 0.10.1 (15: shockwave carries its player and cooldown)
         /// <summary>Snapshot charge byte: 255 = this charge. Over Charge goes up to 3 x (1 + 2) = 9.</summary>
         public const float ChargeScale = 9f;
         public const int MaxClients = 7;

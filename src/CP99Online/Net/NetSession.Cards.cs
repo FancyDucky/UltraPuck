@@ -164,7 +164,7 @@ namespace CP99Online.Net
         }
 
         /// <summary>Host: a Shockwave went off (clients draw the ring).</summary>
-        internal void HostSendShockwave(UnityEngine.Vector2 at, float radius, int team, float z)
+        internal void HostSendShockwave(UnityEngine.Vector2 at, float radius, int team, float z, int slot, float cooldown)
         {
             if (_clients.Count == 0) return;
             Begin(Msg.CardShot);
@@ -173,6 +173,8 @@ namespace CP99Online.Net
             _msg.F32(radius);
             _msg.U8(team < 0 ? 255 : team);
             _msg.F32(z);
+            _msg.U8(slot < 0 ? 255 : slot);
+            _msg.F32(cooldown);
             BroadcastReliable();
         }
 
@@ -186,7 +188,13 @@ namespace CP99Online.Net
                 var radius = r.F32();
                 int waveTeam = r.U8();
                 var z = r.F32();
-                if (Match.Active) CardFx.ShockwaveRing(at, radius, waveTeam == 255 ? -1 : waveTeam, z);
+                int waveSlot = r.U8();
+                var cooldown = r.F32();
+                if (Match.Active)
+                {
+                    CardFx.ShockwaveRing(at, radius, waveTeam == 255 ? -1 : waveTeam, z);
+                    if (waveSlot != 255) CardFx.ShockwaveCooldown(Match.Ball(waveSlot), cooldown);
+                }
                 return;
             }
             if (kind == 2) { int stunSlot = r.U8(); var secs = r.F32(); if (Match.Active) Stun.ClientStunned(stunSlot, secs); return; }

@@ -330,9 +330,10 @@ namespace UltraPuck
         public override CardTier Tier { get { return CardTier.A; } }
         public override string Id { get { return "ultrapuck.shockwave"; } }
         public override string Name { get { return "Shockwave"; } }
-        public override string Description { get { return "Dashing into an opponent sends out a " + CardText.Good("shockwave") + " that pushes away and " + CardText.Good("stuns (0.3 s)") + " opponents near them."; } }
+        public override string Description { get { return "Dashing into an opponent sends out a " + CardText.Good("shockwave") + " that pushes away and " + CardText.Good("stuns (0.3 s)") + " opponents near them. 5 s cooldown." +
+            "\nMore copies: +15% range, +0.1 s stun."; } }
         public override Color Color { get { return new Color(0.35f, 0.65f, 1.00f); } }
-        public override int MaxPerPlayer { get { return 2; } }
+        public override int MaxPerPlayer { get { return 3; } }
         public override void Apply(CardStats s) { s.Shockwave++; }
     }
 }

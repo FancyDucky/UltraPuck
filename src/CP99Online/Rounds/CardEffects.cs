@@ -105,9 +105,13 @@ namespace CP99Online.Rounds
         // ------------------------------------------------------------------ Shockwave
 
         /// <summary>Shockwave reach, in multiples of the hit player's radius (bigger with more copies).</summary>
-        internal static float ShockwaveRange(int copies) { return copies <= 0 ? 0f : 3f + 1.25f * (Mathf.Min(copies, 4) - 1); }
+        internal static float ShockwaveRange(int copies) { return copies <= 0 ? 0f : 3f * (1f + 0.15f * (Mathf.Min(copies, 3) - 1)); }
 
-        internal const float ShockwaveStun = 0.3f;
+        /// <summary>Stun on the opponents a shockwave pushes: 0.3 s, +0.1 s per extra copy.</summary>
+        internal static float ShockwaveStun(int copies) { return 0.3f + 0.1f * (Mathf.Clamp(copies, 1, 3) - 1); }
+
+        /// <summary>Seconds between one player's shockwaves.</summary>
+        internal const float ShockwaveCooldown = 5f;
 
         private const float ShockwavePush = 0.8f; // x the dash check's own push
         private static readonly Dictionary<BallData, float> _shockAt = new Dictionary<BallData, float>();
@@ -119,8 +123,9 @@ namespace CP99Online.Rounds
             var a = AppliedOf(from);
             if (a == null || a.Stats.Shockwave <= 0) return;
             float last;
-            if (_shockAt.TryGetValue(from, out last) && Time.time - last < 0.4f) return; // once per dash
+            if (_shockAt.TryGetValue(from, out last) && Time.time - last < ShockwaveCooldown) return;
             _shockAt[from] = Time.time;
+            var stun = ShockwaveStun(a.Stats.Shockwave);
             var gm = Globals.gameManager;
             var center = (Vector2)target.transform.position;
             var radius = Radius(target.GetComponent<Collider2D>()) * ShockwaveRange(a.Stats.Shockwave);
@@ -146,12 +151,13 @@ namespace CP99Online.Rounds
                     }
                     var v = b.GetComponent<BallVibrator>();
                     if (v != null) v.presetVibrate(rumblePreset.CheckHit);
-                    Stun.Briefly(b, ShockwaveStun);
+                    Stun.Briefly(b, stun);
                     pushed++;
                 }
             var team = gm.teams.IndexOf(from.team);
             CardFx.ShockwaveRing(center, radius, team, target.transform.position.z);
-            if (Net.NetSession.HostInMatch) Net.NetSession.Instance.HostSendShockwave(center, radius, team, target.transform.position.z);
+            CardFx.ShockwaveCooldown(from, ShockwaveCooldown);
+            if (Net.NetSession.HostInMatch) Net.NetSession.Instance.HostSendShockwave(center, radius, team, target.transform.position.z, Net.Match.Slot(from), ShockwaveCooldown);
             Net.NetLog.Info("Shockwave from " + from.name + ": pushed " + pushed + " opponent(s) (radius " + radius.ToString("F2") + ")");
         }
 
@@ -450,7 +456,8 @@ namespace CP99Online.Rounds
             if (!Same(GivenOf(st), 1f)) lines.Add(CardText.Stat(GivenOf(st), "Knockback Given", true));
             if (!Same(st.MoveSpeedWithPuck, 1f))
                 lines.Add(CardText.Neutral(Pct(Mathf.Clamp(st.MoveSpeed, 0.2f, 4f) * Mathf.Clamp(st.MoveSpeedWithPuck, 0.2f, 4f) * Mathf.Clamp(enemySlow, 0.2f, 1f)) + " Move Speed with the puck"));
-            if (st.Shockwave > 0) lines.Add(CardText.Good("Shockwave") + ": your dash hits push away and " + CardText.Good("stun (0.3 s)") + " opponents nearby  (" + ShockwaveRange(st.Shockwave).ToString("0.##") + "x a player's size)");
+            if (st.Shockwave > 0) lines.Add(CardText.Good("Shockwave") + ": your dash hits push away and " + CardText.Good("stun (" + ShockwaveStun(st.Shockwave).ToString("0.0") + " s)") +
+                " opponents nearby  (" + ShockwaveRange(st.Shockwave).ToString("0.##") + "x a player's size, " + ShockwaveCooldown.ToString("0") + " s cooldown)");
             if (!Same(st.Size, 1f)) lines.Add(CardText.Stat(Mathf.Clamp(st.Size, 0.3f, 3f), "Size", true, true));
             if (!Same(st.ShotPower, 1f)) lines.Add(CardText.Stat(Mathf.Clamp(st.ShotPower, 0.2f, 5f), "Shot Power", true));
             if (!Same(st.QuickShotPower, 1f)) lines.Add(CardText.Stat(Mathf.Clamp(st.QuickShotPower, 0.2f, 5f), "Quick Shot Power", true));

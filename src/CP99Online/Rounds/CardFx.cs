@@ -54,21 +54,99 @@ namespace CP99Online.Rounds
 
         internal static void Clear()
         {
+            foreach (var c in _cooldowns.Values) if (c.Line != null) { Destroy(c.Line.gameObject); Destroy(c.Track.gameObject); }
+            _cooldowns.Clear();
             _boost.Clear();
             foreach (var r in _rings.Values) if (r != null) Destroy(r.gameObject);
             _rings.Clear();
         }
 
-        private void OnLevelWasLoaded(int level) { _boost.Clear(); _rings.Clear(); _magnetAt = 0f; }
+        private void OnLevelWasLoaded(int level) { _boost.Clear(); _rings.Clear(); _cooldowns.Clear(); _magnetAt = 0f; }
 
-        private static float _shotAt = -1f;
+        private static float _shotAt = -1f, _shotAt2 = -1f;
         private static int _shots;
 
         private void Update()
         {
             if (_shotAt > 0f && Time.unscaledTime >= _shotAt) { _shotAt = -1f; TestHarness.Shot("fx_event_" + (++_shots) + "_" + (Net.NetSession.ClientInMatch ? "client" : "host")); }
+            if (_shotAt2 > 0f && Time.unscaledTime >= _shotAt2) { _shotAt2 = -1f; TestHarness.Shot("fx_cooldown_" + (Net.NetSession.ClientInMatch ? "client" : "host")); }
             Boosts();
             Magnets();
+            Cooldowns();
+        }
+
+        // ------------------------------------------------------------------ Shockwave cooldown
+        // An arc around the player that fills up clockwise from the top while Shockwave recharges, then flashes once when ready.
+
+        private sealed class Cooldown { public float Start, Length; public LineRenderer Line, Track; }
+        private static readonly Dictionary<BallData, Cooldown> _cooldowns = new Dictionary<BallData, Cooldown>();
+        private static readonly Color CooldownColor = new Color(0.25f, 0.6f, 1f);
+        private const int ArcSegments = 48;
+        private const float ReadyFlash = 0.35f;
+
+        /// <summary>Every PC: this ball's Shockwave went off and is recharging for <paramref name="seconds"/>.</summary>
+        internal static void ShockwaveCooldown(BallData b, float seconds)
+        {
+            if (b == null || seconds <= 0f) return;
+            Cooldown c;
+            if (!_cooldowns.TryGetValue(b, out c)) _cooldowns[b] = c = new Cooldown();
+            c.Start = Time.time;
+            c.Length = seconds;
+            if (TestHarness.FxShots) _shotAt2 = Time.unscaledTime + 2.5f;
+        }
+
+        private static void Cooldowns()
+        {
+            if (_cooldowns.Count == 0) return;
+            var gm = Globals.gameManager;
+            var hide = gm == null || gm.replayManager != null && gm.replayManager.replaying || CardGame.PhaseActive;
+            _done.Clear();
+            foreach (var kv in _cooldowns)
+            {
+                var b = kv.Key;
+                var c = kv.Value;
+                var t = Time.time - c.Start;
+                if (b == null || t > c.Length + ReadyFlash) { _done.Add(b); continue; }
+                if (c.Line == null)
+                {
+                    c.Line = MakeCircle("UltraPuck_ShockwaveCooldown");
+                    c.Line.useWorldSpace = true;
+                    c.Track = MakeCircle("UltraPuck_ShockwaveCooldownTrack"); // a dark full ring behind the arc
+                    var tc = new Color(0.05f, 0.08f, 0.15f, 0.45f);
+                    c.Track.SetColors(tc, tc);
+                }
+                var lr = c.Line;
+                var show = !hide && b.alive && !b.fallen && !Invisibility.IsInvisible(b);
+                lr.enabled = show;
+                c.Track.enabled = show && t < c.Length;
+                if (!show) continue;
+                var p = b.transform.position;
+                var r = CardEffects.Radius(b.GetComponent<Collider2D>()) * 1.45f;
+                var z = p.z - 0.05f;
+                c.Track.transform.position = new Vector3(p.x, p.y, z + 0.01f);
+                c.Track.transform.localScale = new Vector3(r, r, 1f);
+                var tw = 0.13f / Mathf.Max(0.01f, r);
+                c.Track.SetWidth(tw, tw);
+                float fill, alpha, width;
+                if (t < c.Length) { fill = t / c.Length; alpha = 0.95f; width = 0.1f; }
+                else { var k = (t - c.Length) / ReadyFlash; fill = 1f; alpha = 1f - k; width = 0.1f + 0.14f * (1f - k); } // ready: a quick bright flash
+                var n = Mathf.Max(2, Mathf.CeilToInt(fill * ArcSegments) + 1);
+                lr.SetVertexCount(n);
+                for (var i = 0; i < n; i++)
+                {
+                    var a = Mathf.PI / 2f - fill * Mathf.PI * 2f * i / (n - 1); // from the top, clockwise
+                    lr.SetPosition(i, new Vector3(p.x + Mathf.Cos(a) * r, p.y + Mathf.Sin(a) * r, z));
+                }
+                lr.SetWidth(width, width);
+                var col = new Color(CooldownColor.r, CooldownColor.g, CooldownColor.b, alpha);
+                lr.SetColors(col, col);
+            }
+            foreach (var b in _done)
+            {
+                Cooldown c;
+                if (_cooldowns.TryGetValue(b, out c) && c.Line != null) { Destroy(c.Line.gameObject); Destroy(c.Track.gameObject); }
+                _cooldowns.Remove(b);
+            }
         }
 
         // ------------------------------------------------------------------ Shockwave
