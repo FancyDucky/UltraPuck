@@ -202,6 +202,12 @@ namespace CP99Online
                     NetLog.Info("TEST dash: teammate " + target.Name + " dashes into " + seat.Name);
                 }
                 seat.Ball.GetComponent<BallShove>().Shove();
+                if (ShockTest && _burstStep == 0 && target != null)
+                {
+                    // the remote player's own steering can pull the dash off line: aim it straight at the target
+                    var to = (Vector2)(target.Ball.transform.position - seat.Ball.transform.position);
+                    seat.Ball.GetComponent<Rigidbody2D>().velocity = to.normalized * 14f;
+                }
                 var hasGun = Rounds.CardEffects.AppliedOf(seat.Ball) != null && Rounds.CardEffects.AppliedOf(seat.Ball).Stats.PuckGun;
                 if (hasGun) Rounds.CardObjects.OnBrake(seat.Ball); // Puck Gun fires on brake now
                 NetLog.Info("TEST dash press " + (_burstStep + 1) + ": gameTimer=" + seat.Ball.GetComponent<BallShove>().shoveTimer.ToString("F2") + (hasGun ? ", brake (Puck Gun) cooldown " + Rounds.CardObjects.GunCooldownLeft(seat.Ball).ToString("F2") : string.Empty));
@@ -567,6 +573,7 @@ namespace CP99Online
                 NetLog.Info("TEST card menu opened");
             }
             if (!SwitchTest || !Match.Active || Rounds.CardGame.PhaseActive) return;
+            if (DashTeam && _phasesSeen < 1) return; // Friendly Fire swap test: swap only once the card is picked
             var gm = Globals.gameManager;
             if (gm == null || gm.startCountdown > 0f || Time.realtimeSinceStartup < _nextSwitch) return;
             _nextSwitch = Time.realtimeSinceStartup + 3f;

@@ -21,7 +21,27 @@ namespace CP99Online.Rounds
         private static readonly Dictionary<BallData, State> _stunned = new Dictionary<BallData, State>();
         private static readonly Dictionary<int, float> _clientUntil = new Dictionary<int, float>(); // by slot
 
-        internal static void Clear() { _stunned.Clear(); _clientUntil.Clear(); }
+        private static readonly Dictionary<BallData, float> _total = new Dictionary<BallData, float>(); // every PC: length of the current stun (for the bar)
+
+        internal static void Clear() { _stunned.Clear(); _clientUntil.Clear(); _total.Clear(); }
+
+        /// <summary>Host / offline: a short stun with no knockback of its own (Shockwave). Never shortens a longer stun.</summary>
+        internal static void Briefly(BallData b, float seconds)
+        {
+            if (b == null) return;
+            if (Remaining(b) >= seconds) return;
+            _stunned[b] = new State { Until = Time.time + seconds, From = b.transform.position };
+            _total[b] = seconds;
+            var slot = Match.Slot(b);
+            if (NetSession.HostInMatch && slot >= 0) NetSession.Instance.HostSendStun(slot, seconds);
+        }
+
+        /// <summary>How long the current stun on this ball lasts in total (every PC).</summary>
+        internal static float TotalOf(BallData b)
+        {
+            float t;
+            return b != null && _total.TryGetValue(b, out t) && t > 0f ? t : Duration;
+        }
 
         /// <summary>Host / offline: a Puck Gun shot from <paramref name="shooter"/> hit this player, travelling in <paramref name="dir"/>.</summary>
         internal static void Hit(BallData b, Vector2 dir, BallData shooter)
@@ -32,6 +52,7 @@ namespace CP99Online.Rounds
             var rb = b.GetComponent<Rigidbody2D>();
             if (rb != null) rb.AddForce(dir * push, ForceMode2D.Impulse);
             _stunned[b] = new State { Until = Time.time + Duration, From = b.transform.position };
+            _total[b] = Duration;
             var sm = gm != null ? gm.soundManager : null;
             if (sm != null && sm.thrustHitSound != null) sm.CreateSound(sm.thrustHitSound, 2f, 0.6f, 0.8f);
             var slot = Match.Slot(b);
@@ -40,7 +61,12 @@ namespace CP99Online.Rounds
         }
 
         /// <summary>Client: the host says this slot was stunned.</summary>
-        internal static void ClientStunned(int slot, float seconds) { _clientUntil[slot] = Time.time + seconds; }
+        internal static void ClientStunned(int slot, float seconds)
+        {
+            _clientUntil[slot] = Time.time + seconds;
+            var b = Match.Ball(slot);
+            if (b != null) _total[b] = seconds;
+        }
 
         /// <summary>Host / offline: is this player stunned right now? (Also ends stuns that ran out.)</summary>
         internal static bool IsStunned(BallData b)
@@ -112,7 +138,7 @@ namespace CP99Online.Rounds
                     seen.Add(b);
                     if (left > 0f) _active.Add(b);
                     var visible = b.alive && !b.fallen && !gm.replayManager.replaying;
-                    _bars.For(b).Set(b, 1, 1f - left / Stun.Duration, visible, false, Filling, Ready, -0.5f, 0.78f, 0.09f);
+                    _bars.For(b).Set(b, 1, 1f - left / Stun.TotalOf(b), visible, false, Filling, Ready, -0.5f, 0.78f, 0.09f);
                 }
             _bars.Prune(seen);
             _active.IntersectWith(seen);

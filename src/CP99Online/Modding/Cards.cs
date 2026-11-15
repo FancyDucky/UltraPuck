@@ -55,7 +55,7 @@ namespace UltraPuck
         public float FriendlyFire = 1f;
         /// <summary>Braking turns you invisible to the other team for 5 s (15 s cooldown).</summary>
         public bool Invisibility;
-        /// <summary>A teammate dashing into you gives you +80% move speed for 4 s.</summary>
+        /// <summary>A teammate dashing into you gives you +80% move speed for 2 s.</summary>
         public bool TeammateBoost;
     }
 
@@ -318,7 +318,7 @@ namespace UltraPuck
         public override CardTier Tier { get { return CardTier.A; } }
         public override string Id { get { return "ultrapuck.friendlyfire"; } }
         public override string Name { get { return "Friendly Fire"; } }
-        public override string Description { get { return "A teammate dashing into you gives " + CardText.Good("+80% Move Speed for 4 s") + "."; } }
+        public override string Description { get { return "A teammate dashing into you gives " + CardText.Good("+80% Move Speed for 2 s") + "."; } }
         public override Color Color { get { return new Color(1.00f, 0.45f, 0.35f); } }
         public override int MaxPerPlayer { get { return 1; } }
         public override bool CanOffer(int teamSize) { return teamSize >= 2; }
@@ -330,7 +330,7 @@ namespace UltraPuck
         public override CardTier Tier { get { return CardTier.A; } }
         public override string Id { get { return "ultrapuck.shockwave"; } }
         public override string Name { get { return "Shockwave"; } }
-        public override string Description { get { return "Dashing into an opponent sends out a " + CardText.Good("shockwave") + " that pushes away opponents near them."; } }
+        public override string Description { get { return "Dashing into an opponent sends out a " + CardText.Good("shockwave") + " that pushes away and " + CardText.Good("stuns (0.3 s)") + " opponents near them."; } }
         public override Color Color { get { return new Color(0.35f, 0.65f, 1.00f); } }
         public override int MaxPerPlayer { get { return 2; } }
         public override void Apply(CardStats s) { s.Shockwave++; }

@@ -59,7 +59,7 @@ namespace CP99Online.Rounds
 
         // ------------------------------------------------------------------ Friendly Fire: teammate boost
 
-        internal const float TeammateBoost = 1.8f, TeammateBoostSeconds = 4f;
+        internal const float TeammateBoost = 1.8f, TeammateBoostSeconds = 2f;
         private static readonly Dictionary<BallData, float> _boostUntil = new Dictionary<BallData, float>();
 
         /// <summary>Move speed multiplier from a teammate's dash (Friendly Fire), else 1.</summary>
@@ -76,17 +76,38 @@ namespace CP99Online.Rounds
             var a = AppliedOf(target);
             if (a == null || !a.Stats.TeammateBoost) return;
             var fresh = BoostFactor(target) <= 1f;
-            _boostUntil[target] = Time.time + TeammateBoostSeconds;
-            CardFx.Boosted(target, TeammateBoostSeconds);
-            var slot = Net.Match.Slot(target);
-            if (Net.NetSession.HostInMatch && slot >= 0) Net.NetSession.Instance.HostSendBoost(slot, TeammateBoostSeconds);
+            SetBoost(target, TeammateBoostSeconds);
             if (fresh) Net.NetLog.Info("Friendly Fire: " + target.name + " got a speed boost from a teammate's dash");
+        }
+
+        /// <summary>Host / offline: give this ball <paramref name="seconds"/> of Friendly Fire boost (0 = end it), on every PC.</summary>
+        private static void SetBoost(BallData b, float seconds)
+        {
+            if (seconds > 0f) _boostUntil[b] = Time.time + seconds; else _boostUntil.Remove(b);
+            CardFx.Boosted(b, seconds);
+            var slot = Net.Match.Slot(b);
+            if (Net.NetSession.HostInMatch && slot >= 0) Net.NetSession.Instance.HostSendBoost(slot, seconds);
+        }
+
+        /// <summary>Host / offline, bot swap: a Friendly Fire boost stays with the spot, so the person who swaps in gets the bot's boost (and the other way round).</summary>
+        internal static void SwapBoost(BallData me, BallData bot)
+        {
+            float mu, bu;
+            var now = Time.time;
+            var mine = _boostUntil.TryGetValue(me, out mu) && mu > now ? mu - now : 0f;
+            var bots = _boostUntil.TryGetValue(bot, out bu) && bu > now ? bu - now : 0f;
+            if (mine <= 0f && bots <= 0f) return;
+            SetBoost(me, bots);
+            SetBoost(bot, mine);
+            Net.NetLog.Info("Friendly Fire: the boost moved with the swap (" + bots.ToString("F1") + " s to the player, " + mine.ToString("F1") + " s to the bot)");
         }
 
         // ------------------------------------------------------------------ Shockwave
 
         /// <summary>Shockwave reach, in multiples of the hit player's radius (bigger with more copies).</summary>
-        internal static float ShockwaveRange(int copies) { return copies <= 0 ? 0f : 6f + 2.5f * (Mathf.Min(copies, 4) - 1); }
+        internal static float ShockwaveRange(int copies) { return copies <= 0 ? 0f : 3f + 1.25f * (Mathf.Min(copies, 4) - 1); }
+
+        internal const float ShockwaveStun = 0.3f;
 
         private const float ShockwavePush = 0.8f; // x the dash check's own push
         private static readonly Dictionary<BallData, float> _shockAt = new Dictionary<BallData, float>();
@@ -125,6 +146,7 @@ namespace CP99Online.Rounds
                     }
                     var v = b.GetComponent<BallVibrator>();
                     if (v != null) v.presetVibrate(rumblePreset.CheckHit);
+                    Stun.Briefly(b, ShockwaveStun);
                     pushed++;
                 }
             var team = gm.teams.IndexOf(from.team);
@@ -428,7 +450,7 @@ namespace CP99Online.Rounds
             if (!Same(GivenOf(st), 1f)) lines.Add(CardText.Stat(GivenOf(st), "Knockback Given", true));
             if (!Same(st.MoveSpeedWithPuck, 1f))
                 lines.Add(CardText.Neutral(Pct(Mathf.Clamp(st.MoveSpeed, 0.2f, 4f) * Mathf.Clamp(st.MoveSpeedWithPuck, 0.2f, 4f) * Mathf.Clamp(enemySlow, 0.2f, 1f)) + " Move Speed with the puck"));
-            if (st.Shockwave > 0) lines.Add(CardText.Good("Shockwave") + ": your dash hits push away opponents nearby  (" + ShockwaveRange(st.Shockwave).ToString("0.#") + "x your size)");
+            if (st.Shockwave > 0) lines.Add(CardText.Good("Shockwave") + ": your dash hits push away and " + CardText.Good("stun (0.3 s)") + " opponents nearby  (" + ShockwaveRange(st.Shockwave).ToString("0.##") + "x a player's size)");
             if (!Same(st.Size, 1f)) lines.Add(CardText.Stat(Mathf.Clamp(st.Size, 0.3f, 3f), "Size", true, true));
             if (!Same(st.ShotPower, 1f)) lines.Add(CardText.Stat(Mathf.Clamp(st.ShotPower, 0.2f, 5f), "Shot Power", true));
             if (!Same(st.QuickShotPower, 1f)) lines.Add(CardText.Stat(Mathf.Clamp(st.QuickShotPower, 0.2f, 5f), "Quick Shot Power", true));
@@ -447,7 +469,7 @@ namespace CP99Online.Rounds
             if (st.PuckGun) lines.Add("Puck Gun: brake to fire a " + CardText.Good("1 s Stun") + " shot  (2 s cooldown)");
             if (st.Invisibility) lines.Add("Invisibility: brake to turn " + CardText.Good("invisible for 5 s") + "  (15 s cooldown)");
             if (!Same(st.FriendlyFire, 1f)) lines.Add(CardText.Stat(FriendlyFireOf(st), "Teammate Knockback", true) + "  (dashes and Puck Gun)");
-            if (st.TeammateBoost) lines.Add("Friendly Fire: a teammate's dash into you gives " + CardText.Good("+80% Move Speed for 4 s"));
+            if (st.TeammateBoost) lines.Add("Friendly Fire: a teammate's dash into you gives " + CardText.Good("+80% Move Speed for 2 s") + "  (bot swaps pass it on)");
             if (lines.Count == 0) lines.Add("No changes from cards.");
             return lines;
         }

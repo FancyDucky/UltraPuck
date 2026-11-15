@@ -142,6 +142,7 @@ namespace CP99Online.Rounds
         internal static void Boosted(BallData b, float seconds)
         {
             if (b == null) return;
+            if (seconds <= 0f) { _boost.Remove(b); return; }
             Boost s;
             if (!_boost.TryGetValue(b, out s)) _boost[b] = s = new Boost();
             s.Until = Time.time + seconds;
