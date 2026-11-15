@@ -152,9 +152,43 @@ namespace CP99Online.Net
             BroadcastReliable();
         }
 
+        /// <summary>Host: Friendly Fire boosted this slot (clients draw the particles).</summary>
+        internal void HostSendBoost(int slot, float seconds)
+        {
+            if (_clients.Count == 0) return;
+            Begin(Msg.CardShot);
+            _msg.U8(4);
+            _msg.U8(slot);
+            _msg.F32(seconds);
+            BroadcastReliable();
+        }
+
+        /// <summary>Host: a Shockwave went off (clients draw the ring).</summary>
+        internal void HostSendShockwave(UnityEngine.Vector2 at, float radius, int team, float z)
+        {
+            if (_clients.Count == 0) return;
+            Begin(Msg.CardShot);
+            _msg.U8(5);
+            _msg.F32(at.x); _msg.F32(at.y);
+            _msg.F32(radius);
+            _msg.U8(team < 0 ? 255 : team);
+            _msg.F32(z);
+            BroadcastReliable();
+        }
+
         private void ClientHandleShot(Reader r)
         {
             var kind = r.U8();
+            if (kind == 4) { int boostSlot = r.U8(); var secs = r.F32(); if (Match.Active) CardFx.Boosted(Match.Ball(boostSlot), secs); return; }
+            if (kind == 5)
+            {
+                var at = new UnityEngine.Vector2(r.F32(), r.F32());
+                var radius = r.F32();
+                int waveTeam = r.U8();
+                var z = r.F32();
+                if (Match.Active) CardFx.ShockwaveRing(at, radius, waveTeam == 255 ? -1 : waveTeam, z);
+                return;
+            }
             if (kind == 2) { int stunSlot = r.U8(); var secs = r.F32(); if (Match.Active) Stun.ClientStunned(stunSlot, secs); return; }
             if (kind == 3) { int invSlot = r.U8(); var secs = r.F32(); if (Match.Active) Invisibility.Begin(Match.Ball(invSlot), secs); return; }
             var id = r.U16();

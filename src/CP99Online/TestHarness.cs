@@ -26,6 +26,7 @@ namespace CP99Online
         private void Start()
         {
             _role = Environment.GetEnvironmentVariable("CP99_TEST");
+            _roleStatic = _role;
             if (string.IsNullOrEmpty(_role)) { enabled = false; return; }
             int p;
             if (int.TryParse(Environment.GetEnvironmentVariable("CP99_TEST_PORT"), out p)) _port = p;
@@ -82,7 +83,12 @@ namespace CP99Online
             if (!cg && _inPhase)
                 for (var i = 0; i < Rounds.CardGame.Seats.Count; i++)
                     NetLog.Info("TEST stats " + Rounds.CardGame.Seats[i].Name + ": " + string.Join(" | ", Rounds.CardEffects.StatLines(i).ToArray()));
-            if (cg && !_inPhase) { _inPhase = true; _phasesSeen++; _burstStep = 0; _burstAt = -1f; NetLog.Info("TEST rounds: card screen " + _phasesSeen + " shown"); }
+            if (cg && !_inPhase) { _inPhase = true; _phasesSeen++; _burstStep = 0; _burstAt = -1f; _cardShot = false; NetLog.Info("TEST rounds: card screen " + _phasesSeen + " shown"); }
+            if (cg && !_cardShot && Time.realtimeSinceStartup - Rounds.CardGame.PhaseStartedAt > 2.5f)
+            {
+                _cardShot = true;
+                Shot("cards_" + _role + "_" + _phasesSeen);
+            }
             if (!cg) { _inPhase = false; return; }
             var wait = _role == "host" ? 5f : 7f;
             if (Time.realtimeSinceStartup - Rounds.CardGame.PhaseStartedAt < wait) return;
@@ -96,6 +102,26 @@ namespace CP99Online
                 else { Rounds.CardGame.PickLocal(i, pick); NetSession.Instance.ClientSendCardPick(i, pick); }
             }
         }
+
+        private bool _cardShot;
+
+        /// <summary>Tests: save a screenshot to CP99_SHOTDIR (if set).</summary>
+        internal static void Shot(string name)
+        {
+            var dir = Environment.GetEnvironmentVariable("CP99_SHOTDIR");
+            if (string.IsNullOrEmpty(dir) || _roleStatic == null) return;
+            var path = System.IO.Path.Combine(dir, name + ".png");
+            Application.CaptureScreenshot(path);
+            NetLog.Info("TEST screenshot " + path);
+        }
+
+        private static string _roleStatic;
+
+        /// <summary>CP99_TEST_SHOCK=1 (host): before the test dash, line the opponents up in front of the dasher (Shockwave).</summary>
+        internal static readonly bool ShockTest = Environment.GetEnvironmentVariable("CP99_TEST_SHOCK") == "1";
+
+        /// <summary>CP99_TEST_FXSHOT=1 (or CP99_TEST_SHOCK): screenshot card effects (shockwave ring, Friendly Fire sparkles) as they happen.</summary>
+        internal static readonly bool FxShots = ShockTest || Environment.GetEnvironmentVariable("CP99_TEST_FXSHOT") == "1";
 
         // Once a pylon exists and play is running: give it one shove (host) to check it moves and syncs.
         private bool _pylonPushed;
@@ -122,7 +148,8 @@ namespace CP99Online
             var gm = Globals.gameManager;
             if (gm == null || Rounds.CardGame.PhaseActive || gm.startCountdown > 0f || gm.roundOver) return;
             // Prefer a player with Puck Gun (aimed at the nearest opponent), else the host's own player.
-            var seat = Rounds.CardGame.Seats.FirstOrDefault(x => x.Ball != null && Rounds.CardEffects.AppliedOf(x.Ball) != null && Rounds.CardEffects.AppliedOf(x.Ball).Stats.PuckGun)
+            var seat = (ShockTest ? Rounds.CardGame.Seats.FirstOrDefault(x => x.Ball != null && Rounds.CardEffects.AppliedOf(x.Ball) != null && Rounds.CardEffects.AppliedOf(x.Ball).Stats.Shockwave > 0) : null)
+                ?? Rounds.CardGame.Seats.FirstOrDefault(x => x.Ball != null && Rounds.CardEffects.AppliedOf(x.Ball) != null && Rounds.CardEffects.AppliedOf(x.Ball).Stats.PuckGun)
                 ?? Rounds.CardGame.Seats.FirstOrDefault(x => x.Human && x.Owner == 0);
             if (seat == null || seat.Ball == null) return;
             var now = Time.realtimeSinceStartup;
@@ -132,6 +159,20 @@ namespace CP99Online
             {
                 var target = Rounds.CardGame.Seats.Where(x => x.Ball != null && x != seat && (DashTeam ? x.Team == seat.Team : x.Team != seat.Team) && x.Ball.alive)
                     .OrderBy(x => Vector2.Distance(x.Ball.transform.position, seat.Ball.transform.position)).FirstOrDefault();
+                if (target != null && _burstStep == 0 && ShockTest)
+                {
+                    // Shockwave test: the target 1.6 in front of the dasher, the other opponents around the target
+                    var fwd = (Vector2)(target.Ball.transform.position - seat.Ball.transform.position);
+                    fwd = fwd.sqrMagnitude > 0.01f ? fwd.normalized : Vector2.up;
+                    var side = new Vector2(-fwd.y, fwd.x);
+                    var at = (Vector2)seat.Ball.transform.position + fwd * 1.6f;
+                    Place(target.Ball, at);
+                    var k = 0;
+                    foreach (var o in Rounds.CardGame.Seats.Where(x => x.Ball != null && x != target && x.Team == target.Team && x.Ball.alive))
+                        Place(o.Ball, at + side * (k++ % 2 == 0 ? 1.3f : -1.3f) + fwd * 0.4f);
+                    seat.Ball.GetComponent<BallShove>().shoveTimer = 0f; // a dash just before mustn't block the test dash
+                    NetLog.Info("TEST shockwave: lined up " + (k + 1) + " opponent(s) in front of " + seat.Name);
+                }
                 if (target != null && _burstStep == 0)
                 {
                     var d = target.Ball.transform.position - seat.Ball.transform.position;
@@ -151,7 +192,8 @@ namespace CP99Online
                 }
                 if (DashTeam && _burstStep == 0 && target != null)
                 {
-                    // Friendly Fire test: the teammate dashes into this player instead
+                    // Friendly Fire test: the teammate dashes into this player instead (from 1.6 away)
+                    Place(target.Ball, (Vector2)seat.Ball.transform.position + Vector2.right * 1.6f);
                     var d2 = seat.Ball.transform.position - target.Ball.transform.position;
                     target.Ball.transform.rotation = Quaternion.Euler(0f, 0f, Mathf.Atan2(d2.y, d2.x) * Mathf.Rad2Deg - 90f);
                     var ts = target.Ball.GetComponent<BallShove>();
@@ -537,6 +579,14 @@ namespace CP99Online
                     " aiScript=" + b.GetComponent<BallAI_v2>().enabled + " ctrl=" + (Possession.ControllerOf(b) != null ? Possession.ControllerOf(b).playerData.account.name : "AI") +
                     " v=" + b.GetComponent<Rigidbody2D>().velocity.magnitude.ToString("F1"));
             NetLog.Info(d.ToString());
+        }
+
+        private static void Place(BallData b, Vector2 at)
+        {
+            var p = new Vector3(at.x, at.y, b.transform.position.z);
+            b.transform.position = p;
+            var rb = b.GetComponent<Rigidbody2D>();
+            if (rb != null) { rb.position = p; rb.velocity = Vector2.zero; }
         }
 
         private static string Fmt(Vector3 v) { return "(" + v.x.ToString("F2") + "," + v.y.ToString("F2") + ")"; }

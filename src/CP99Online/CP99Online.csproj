@@ -37,6 +37,8 @@
     <!-- Main menu title letters, rendered from the Chakra Petch font (SIL Open Font License). -->
     <EmbeddedResource Include="Assets\title-ultra.png" LogicalName="UltraPuck.title-ultra.png" />
     <EmbeddedResource Include="Assets\title-puck.png" LogicalName="UltraPuck.title-puck.png" />
+    <!-- Card art (made from art/cards by art/convert-cards.py), named by card id. -->
+    <EmbeddedResource Include="Assets\cards\*.jpg" LogicalName="UltraPuck.card.%(Filename)%(Extension)" />
   </ItemGroup>
 
   <Target Name="DeployToGame" AfterTargets="Build">

@@ -231,8 +231,8 @@ namespace CP99Online.Rounds
             var maxTags = rows.Max(r => r.Count);
             var tagH = 22 * u;
             var tagsH = maxTags > 1 ? maxTags * tagH : 0f; // room above the cards for the name cursors
-            var cardH = Mathf.Min(320 * u, rowH - 36 * u - tagsH);
-            var cardW = cardH * 0.7f;
+            var cardH = Mathf.Min(360 * u, rowH - 36 * u - tagsH);
+            var cardW = cardH * CardRatio;
             var gap = 18 * u;
             for (var r = 0; r < rows.Count; r++)
             {
@@ -309,8 +309,8 @@ namespace CP99Online.Rounds
             if (entries.Count == 0) return;
             var perRow = Mathf.Min(entries.Count, 4);
             var rowsN = (entries.Count + perRow - 1) / perRow;
-            var cardH = Mathf.Min(240 * u, (Screen.height * 0.72f) / rowsN - 34 * u);
-            var cardW = cardH * 0.7f;
+            var cardH = Mathf.Min(270 * u, (Screen.height * 0.72f) / rowsN - 34 * u);
+            var cardW = cardH * CardRatio;
             var gap = 22 * u;
             for (var e = 0; e < entries.Count; e++)
             {
@@ -398,6 +398,9 @@ namespace CP99Online.Rounds
             Label(new Rect(r.x + 8 * u, r.y + 32 * u, w - 16 * u, body), _tipBody, _tipText);
         }
 
+        /// <summary>Card width / height: room for the square art and the text under it.</summary>
+        private const float CardRatio = 0.62f;
+
         /// <summary>Draws one card; returns true if it was clicked.</summary>
         private bool DrawCard(Rect r, string id, bool selected, bool chosen, bool dim, string footer, float u)
         {
@@ -405,23 +408,60 @@ namespace CP99Online.Rounds
             // words don't re-wrap when the selection moves.
             var inner = r;
             if (selected) r = new Rect(r.x - r.width * 0.03f, r.y - r.height * 0.03f, r.width * 1.06f, r.height * 1.06f);
+            // Layout, top to bottom: name band, the card's art (a square), the description, the footer.
             var c = CardColor(id);
             var a = dim ? 0.45f : 1f;
             Fill(r, new Color(0.11f, 0.12f, 0.15f, 0.97f * (dim ? 0.8f : 1f)));
-            var head = new Rect(r.x, r.y, r.width, inner.yMax - inner.height * 0.74f - r.y);
+            var head = new Rect(r.x, r.y, r.width, r.height * 0.11f);
             Fill(head, new Color(c.r, c.g, c.b, a));
-            var nameStyle = new GUIStyle(_cardName) { fontSize = Mathf.RoundToInt(inner.height * 0.075f) };
+            var nameStyle = new GUIStyle(_cardName) { fontSize = Mathf.RoundToInt(inner.height * 0.062f) };
             Label(new Rect(inner.x + 6 * u, head.y, inner.width - 12 * u, head.height), CardName(id), nameStyle);
-            var textStyle = new GUIStyle(_cardText) { fontSize = Mathf.Max(10, Mathf.RoundToInt(inner.height * 0.052f)) };
+
+            var pad = r.width * 0.07f;
+            var art = new Rect(r.x + pad, head.yMax + pad * 0.7f, r.width - 2 * pad, r.width - 2 * pad);
+            var tex = CardArt.Get(id);
+            if (tex != null)
+            {
+                var old = GUI.color;
+                GUI.color = dim ? new Color(0.55f, 0.55f, 0.55f, 0.8f) : Color.white;
+                GUI.DrawTexture(art, tex, ScaleMode.ScaleAndCrop);
+                GUI.color = old;
+            }
+            else Fill(art, new Color(c.r * 0.55f, c.g * 0.55f, c.b * 0.55f, a)); // no art yet: the card's colour
+
+            var footerH = !string.IsNullOrEmpty(footer) ? inner.height * 0.08f : 0f;
+            var textRect = new Rect(inner.x + 8 * u, art.yMax + 6 * u, inner.width - 16 * u, r.yMax - footerH - art.yMax - 8 * u);
+            var textStyle = new GUIStyle(_cardText) { fontSize = Mathf.Max(9, Mathf.RoundToInt(inner.height * 0.042f)) };
             textStyle.normal.textColor = new Color(0.9f, 0.92f, 0.95f, a);
-            Label(new Rect(inner.x + 10 * u, head.yMax + 10 * u, inner.width - 20 * u, inner.height * 0.55f), CardText(id), textStyle);
+            var text = new GUIContent(CardText(id));
+            while (textStyle.fontSize > 9 && textStyle.CalcHeight(text, textRect.width) > textRect.height) textStyle.fontSize--; // long texts shrink to fit
+            GUI.Label(textRect, text, textStyle);
             if (!string.IsNullOrEmpty(footer))
             {
-                var f = new GUIStyle(_small) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.Max(10, Mathf.RoundToInt(inner.height * 0.05f)) };
-                Label(new Rect(inner.x, inner.yMax - inner.height * 0.12f, inner.width, inner.height * 0.1f), footer, f);
+                var f = new GUIStyle(_small) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.Max(9, Mathf.RoundToInt(inner.height * 0.04f)) };
+                Label(new Rect(inner.x, r.yMax - footerH, inner.width, footerH * 0.9f), footer, f);
             }
-            if (chosen) Outline(r, new Color(1f, 0.85f, 0.25f), 4 * u);
-            else if (selected) Outline(r, Color.white, 3 * u);
+            // tier border (S / A / B / F...) with a soft, slowly pulsing glow around it
+            var tier = CardTier(id);
+            if (tier != UltraPuck.CardTier.None)
+            {
+                var tc = TierColor(tier);
+                var pulse = 0.75f + 0.25f * Mathf.Sin(Time.unscaledTime * 2.4f + r.x * 0.01f);
+                var glow = tier == UltraPuck.CardTier.S ? 1f : tier == UltraPuck.CardTier.F ? 0.35f : 0.7f; // better cards glow brighter
+                const int Layers = 8;
+                for (var i = Layers; i >= 1; i--)
+                {
+                    var g = i * 3f * u;
+                    var k = 1f - (i - 1f) / Layers;
+                    Outline(new Rect(r.x - g, r.y - g, r.width + 2 * g, r.height + 2 * g), new Color(tc.r, tc.g, tc.b, 0.32f * k * k * glow * pulse * a), 3f * u);
+                }
+                tc.a *= a;
+                Outline(r, tc, Mathf.Max(2f, 4 * u));
+            }
+            // the selection outline sits just outside the tier border
+            var sel = new Rect(r.x - 4 * u, r.y - 4 * u, r.width + 8 * u, r.height + 8 * u);
+            if (chosen) Outline(sel, new Color(1f, 0.85f, 0.25f), 4 * u);
+            else if (selected) Outline(sel, Color.white, 3 * u);
 
             var e = Event.current;
             if (e.type == EventType.MouseDown && e.button == 0 && r.Contains(e.mousePosition))
@@ -436,6 +476,23 @@ namespace CP99Online.Rounds
 
         private static string CardName(string id) { var c = UltraPuck.Cards.Get(id); return c != null ? c.Name : id; }
         private static string CardText(string id) { var c = UltraPuck.Cards.Get(id); return c != null ? c.Description : "A card from a mod you don't have."; }
+        private static UltraPuck.CardTier CardTier(string id) { var c = UltraPuck.Cards.Get(id); return c != null ? c.Tier : UltraPuck.CardTier.None; }
+
+        /// <summary>Border colour per tier: S red, A purple, B blue, C green, D grey-green, F grey.</summary>
+        internal static Color TierColor(UltraPuck.CardTier t)
+        {
+            switch (t)
+            {
+                case UltraPuck.CardTier.S: return new Color(1.00f, 0.32f, 0.36f);
+                case UltraPuck.CardTier.A: return new Color(0.70f, 0.45f, 1.00f);
+                case UltraPuck.CardTier.B: return new Color(0.30f, 0.65f, 1.00f);
+                case UltraPuck.CardTier.C: return new Color(0.35f, 0.85f, 0.45f);
+                case UltraPuck.CardTier.D: return new Color(0.60f, 0.70f, 0.55f);
+                case UltraPuck.CardTier.F: return new Color(0.55f, 0.57f, 0.62f);
+                default: return Color.clear;
+            }
+        }
+
         private static Color CardColor(string id) { var c = UltraPuck.Cards.Get(id); return c != null ? c.Color : Color.gray; }
 
         private static Color TeamColor(int team)

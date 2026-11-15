@@ -51,6 +51,12 @@ namespace CP99Online.Rounds
 
         internal static float OverChargeOf(CardStats st) { return Mathf.Clamp(st.OverCharge, 0f, MaxOverCharge); }
 
+        /// <summary>Mass multiplier: Weight, and Knockback Taken (0.2 = 5x the mass, so hits push you 80% less).</summary>
+        internal static float MassOf(CardStats st) { return Mathf.Clamp(st.Weight / Mathf.Max(0.01f, st.KnockbackTaken), 0.1f, 10f); }
+
+        /// <summary>Dash check push multiplier: Weight and Knockback Given.</summary>
+        internal static float GivenOf(CardStats st) { return Mathf.Clamp(st.Weight * st.KnockbackGiven, 0.1f, 10f); }
+
         // ------------------------------------------------------------------ Friendly Fire: teammate boost
 
         internal const float TeammateBoost = 1.8f, TeammateBoostSeconds = 4f;
@@ -71,7 +77,60 @@ namespace CP99Online.Rounds
             if (a == null || !a.Stats.TeammateBoost) return;
             var fresh = BoostFactor(target) <= 1f;
             _boostUntil[target] = Time.time + TeammateBoostSeconds;
+            CardFx.Boosted(target, TeammateBoostSeconds);
+            var slot = Net.Match.Slot(target);
+            if (Net.NetSession.HostInMatch && slot >= 0) Net.NetSession.Instance.HostSendBoost(slot, TeammateBoostSeconds);
             if (fresh) Net.NetLog.Info("Friendly Fire: " + target.name + " got a speed boost from a teammate's dash");
+        }
+
+        // ------------------------------------------------------------------ Shockwave
+
+        /// <summary>Shockwave reach, in multiples of the hit player's radius (bigger with more copies).</summary>
+        internal static float ShockwaveRange(int copies) { return copies <= 0 ? 0f : 6f + 2.5f * (Mathf.Min(copies, 4) - 1); }
+
+        private const float ShockwavePush = 0.8f; // x the dash check's own push
+        private static readonly Dictionary<BallData, float> _shockAt = new Dictionary<BallData, float>();
+
+        /// <summary>Host / offline: <paramref name="from"/>'s dash hit an opponent: with Shockwave, push the opponents around them away.</summary>
+        internal static void Shockwave(BallData from, BallData target, Vector2 attackerVelocity)
+        {
+            if (from == null || target == null || from == target || from.team == target.team) return;
+            var a = AppliedOf(from);
+            if (a == null || a.Stats.Shockwave <= 0) return;
+            float last;
+            if (_shockAt.TryGetValue(from, out last) && Time.time - last < 0.4f) return; // once per dash
+            _shockAt[from] = Time.time;
+            var gm = Globals.gameManager;
+            var center = (Vector2)target.transform.position;
+            var radius = Radius(target.GetComponent<Collider2D>()) * ShockwaveRange(a.Stats.Shockwave);
+            var speed = Mathf.Max(attackerVelocity.magnitude, 8f);
+            var pushed = 0;
+            foreach (var t in gm.teams)
+                foreach (var b in t.members)
+                {
+                    if (b == null || b == from || b == target || b.team == from.team || !b.alive || b.fallen) continue;
+                    var d = (Vector2)b.transform.position - center;
+                    var dist = d.magnitude;
+                    if (dist > radius + Radius(b.GetComponent<Collider2D>())) continue;
+                    var dir = dist > 0.01f ? d / dist : Random.insideUnitCircle.normalized;
+                    var falloff = Mathf.Lerp(1f, 0.5f, Mathf.Clamp01(dist / radius));
+                    var rb = b.GetComponent<Rigidbody2D>();
+                    if (rb != null) rb.AddForce(dir * speed * 18f * ShockwavePush * falloff * GivenOf(a.Stats));
+                    var bp = b.GetComponent<BallParticles>();
+                    if (bp != null && bp.checkParticles != null)
+                    {
+                        bp.checkParticles.transform.rotation = Quaternion.LookRotation(Vector3.forward, dir);
+                        bp.checkParticles.transform.position = b.transform.position - (Vector3)(dir * 0.3f);
+                        bp.checkParticles.Emit(10);
+                    }
+                    var v = b.GetComponent<BallVibrator>();
+                    if (v != null) v.presetVibrate(rumblePreset.CheckHit);
+                    pushed++;
+                }
+            var team = gm.teams.IndexOf(from.team);
+            CardFx.ShockwaveRing(center, radius, team, target.transform.position.z);
+            if (Net.NetSession.HostInMatch) Net.NetSession.Instance.HostSendShockwave(center, radius, team, target.transform.position.z);
+            Net.NetLog.Info("Shockwave from " + from.name + ": pushed " + pushed + " opponent(s) (radius " + radius.ToString("F2") + ")");
         }
 
         /// <summary>
@@ -95,6 +154,8 @@ namespace CP99Online.Rounds
             _applied.Clear();
             _dash.Clear();
             _boostUntil.Clear();
+            _shockAt.Clear();
+            CardFx.Clear();
             CardObjects.Clear();
         }
 
@@ -164,7 +225,7 @@ namespace CP99Online.Rounds
             b.transform.localScale = o.Scale * Mathf.Clamp(st.Size, 0.3f, 3f);
             if (!full) return;
 
-            var weight = Mathf.Clamp(st.Weight, 0.1f, 10f);
+            var weight = MassOf(st);
             b.strength = o.Strength * Mathf.Clamp(st.ShotPower, 0.2f, 5f);
             b.mass = o.Mass * weight;
             var handling = b.GetComponent<BallHandling>();
@@ -363,12 +424,11 @@ namespace CP99Online.Rounds
             if (!Same(speed, 1f))
                 lines.Add(CardText.Stat(speed, "Move Speed", true) +
                     (enemySlow < 0.999f ? "  (includes " + CardText.Stat(enemySlow, "from opponents' Slow Poke", true) + ")" : string.Empty));
-            var weight = Mathf.Clamp(st.Weight, 0.1f, 10f);
-            if (!Same(weight, 1f))
-            {
-                lines.Add(CardText.Stat(1f / weight, "Knockback Taken", false));
-                lines.Add(CardText.Stat(weight, "Knockback Given", true));
-            }
+            if (!Same(MassOf(st), 1f)) lines.Add(CardText.Stat(1f / MassOf(st), "Knockback Taken", false));
+            if (!Same(GivenOf(st), 1f)) lines.Add(CardText.Stat(GivenOf(st), "Knockback Given", true));
+            if (!Same(st.MoveSpeedWithPuck, 1f))
+                lines.Add(CardText.Neutral(Pct(Mathf.Clamp(st.MoveSpeed, 0.2f, 4f) * Mathf.Clamp(st.MoveSpeedWithPuck, 0.2f, 4f) * Mathf.Clamp(enemySlow, 0.2f, 1f)) + " Move Speed with the puck"));
+            if (st.Shockwave > 0) lines.Add(CardText.Good("Shockwave") + ": your dash hits push away opponents nearby  (" + ShockwaveRange(st.Shockwave).ToString("0.#") + "x your size)");
             if (!Same(st.Size, 1f)) lines.Add(CardText.Stat(Mathf.Clamp(st.Size, 0.3f, 3f), "Size", true, true));
             if (!Same(st.ShotPower, 1f)) lines.Add(CardText.Stat(Mathf.Clamp(st.ShotPower, 0.2f, 5f), "Shot Power", true));
             if (!Same(st.QuickShotPower, 1f)) lines.Add(CardText.Stat(Mathf.Clamp(st.QuickShotPower, 0.2f, 5f), "Quick Shot Power", true));
@@ -385,7 +445,7 @@ namespace CP99Online.Rounds
             if (st.OpponentSpeed < 0.999f) lines.Add(CardText.Stat(st.OpponentSpeed, "Opponent Move Speed", false));
             if (pylons > 0) lines.Add(CardText.Good("+" + Mathf.Min(pylons, 4) + " Pylon Goalie" + (pylons > 1 ? "s" : string.Empty)) + "  (your team's net)");
             if (st.PuckGun) lines.Add("Puck Gun: brake to fire a " + CardText.Good("1 s Stun") + " shot  (2 s cooldown)");
-            if (st.Invisibility) lines.Add("Invisibility: brake to turn " + CardText.Good("invisible for 5 s") + "  (12 s cooldown)");
+            if (st.Invisibility) lines.Add("Invisibility: brake to turn " + CardText.Good("invisible for 5 s") + "  (15 s cooldown)");
             if (!Same(st.FriendlyFire, 1f)) lines.Add(CardText.Stat(FriendlyFireOf(st), "Teammate Knockback", true) + "  (dashes and Puck Gun)");
             if (st.TeammateBoost) lines.Add("Friendly Fire: a teammate's dash into you gives " + CardText.Good("+80% Move Speed for 4 s"));
             if (lines.Count == 0) lines.Add("No changes from cards.");
@@ -393,6 +453,8 @@ namespace CP99Online.Rounds
         }
 
         private static bool Same(float a, float b) { return Mathf.Abs(a - b) < 0.005f; }
+
+        private static string Pct(float m) { var p = Mathf.RoundToInt((m - 1f) * 100f); return (p > 0 ? "+" : string.Empty) + p + "%"; }
 
         internal static string Describe(BallData b)
         {
@@ -414,7 +476,9 @@ namespace CP99Online.Rounds
         private static void Postfix(BallData __instance)
         {
             var a = CardEffects.AppliedOf(__instance);
-            if (a != null && CardGame.IsAuthority) __instance.totalSpeed *= a.SpeedFactor * CardEffects.BoostFactor(__instance);
+            if (a == null || !CardGame.IsAuthority) return;
+            __instance.totalSpeed *= a.SpeedFactor * CardEffects.BoostFactor(__instance) *
+                (__instance.carryObject != null ? Mathf.Clamp(a.Stats.MoveSpeedWithPuck, 0.2f, 4f) : 1f);
         }
     }
 
@@ -482,7 +546,7 @@ namespace CP99Online.Rounds
             var me = shove.GetComponent<BallData>();
             var a = CardEffects.AppliedOf(me);
             if (a == null) return GameCheckForce;
-            var w = Mathf.Clamp(a.Stats.Weight, 0.1f, 10f);
+            var w = CardEffects.GivenOf(a.Stats);
             var ff = CardEffects.FriendlyFireMul(me, hit != null && hit.gameObject != null ? hit.gameObject.GetComponent<BallData>() : null);
             if (Mathf.Approximately(w * ff, 1f)) return GameCheckForce;
             Net.NetLog.Debug("Check force x" + w.ToString("F2") + (ff > 1.001f ? " (Friendly Fire x" + ff.ToString("F1") + ")" : string.Empty));
@@ -554,7 +618,7 @@ namespace CP99Online.Rounds
 
             var a = CardEffects.AppliedOf(b);
             if (a == null) return;
-            var weight = Mathf.Clamp(a.Stats.Weight, 0.1f, 10f);
+            var weight = CardEffects.MassOf(a.Stats);
             if (!Mathf.Approximately(weight, 1f))
             {
                 var rb = b.GetComponent<Rigidbody2D>();

@@ -18,7 +18,7 @@ namespace CP99Online.Rounds
     internal sealed class Invisibility : MonoBehaviour
     {
         internal const float Duration = 5f;
-        internal const float Cooldown = 12f; // from when it starts, so 7 s visible between uses
+        internal const float Cooldown = 15f; // from when it starts, so 10 s visible between uses
         internal const float FadeTime = 0.8f;
 
         private sealed class State
@@ -36,6 +36,9 @@ namespace CP99Online.Rounds
 
         /// <summary>Every PC: when this ball last turned invisible (for the cooldown bar).</summary>
         private static readonly Dictionary<BallData, float> _startedAt = new Dictionary<BallData, float>();
+
+        /// <summary>Is this ball invisible (or fading out) right now, on this PC?</summary>
+        internal static bool IsInvisible(BallData b) { return b != null && _active.ContainsKey(b); }
 
         /// <summary>Cooldown left after this ball last turned invisible (0 = ready / never used).</summary>
         internal static float CooldownLeft(BallData b)

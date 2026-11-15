@@ -19,20 +19,29 @@ namespace CP99Online.Rounds
         }
     }
 
-    /// <summary>Friendly Fire: notice a dash hitting a teammate (the game's own dash-hit window, BallShove).</summary>
+    /// <summary>Friendly Fire and Shockwave: notice a dash hitting someone (the game's own dash-hit window, BallShove).</summary>
     [HarmonyPatch(typeof(BallShove), "OnCollisionEnter2D")]
     internal static class TeammateDashPatch
     {
         private const float DashWindow = 0.25f; // BallShove: shoveTimer > shoveCooldown - 0.25
 
-        private static void Postfix(BallShove __instance, Collision2D collision2D)
+        private static void Prefix(BallShove __instance, out Vector2 __state)
+        {
+            var rb = __instance.GetComponent<Rigidbody2D>();
+            __state = rb != null ? rb.velocity : Vector2.zero; // the dash speed, before the hit slows it
+        }
+
+        private static void Postfix(BallShove __instance, Collision2D collision2D, Vector2 __state)
         {
             if (!CardGame.IsAuthority || collision2D == null || collision2D.gameObject == null) return;
             var gm = Globals.gameManager;
             if (gm == null || gm.replayManager.replaying) return;
             if (__instance.shoveTimer <= CardEffects.GameDashCooldown - DashWindow) return;
             var target = collision2D.gameObject.GetComponent<BallData>();
-            if (target != null) CardEffects.OnDashHit(__instance.GetComponent<BallData>(), target);
+            if (target == null) return;
+            var me = __instance.GetComponent<BallData>();
+            CardEffects.OnDashHit(me, target);
+            CardEffects.Shockwave(me, target, __state);
         }
     }
 }
