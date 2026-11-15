@@ -7,6 +7,7 @@ namespace CP99Online.Rounds
     /// Card visuals drawn on every PC:
     /// - Shockwave: a ring that bursts out from the player who was hit (the host sends it to clients).
     /// - Friendly Fire: the team-coloured respawn sparkles keep coming off a player while their speed boost lasts.
+    /// - Shockwave ready: a yellow dot in the middle of the player while their Shockwave can go off.
     /// - Puck Magnet: a faint circle around the player showing how far away they grab a loose puck.
     /// </summary>
     internal sealed class CardFx : MonoBehaviour
@@ -54,98 +55,101 @@ namespace CP99Online.Rounds
 
         internal static void Clear()
         {
-            foreach (var c in _cooldowns.Values) if (c.Line != null) { Destroy(c.Line.gameObject); Destroy(c.Track.gameObject); }
-            _cooldowns.Clear();
+            ClearDots();
             _boost.Clear();
             foreach (var r in _rings.Values) if (r != null) Destroy(r.gameObject);
             _rings.Clear();
         }
 
-        private void OnLevelWasLoaded(int level) { _boost.Clear(); _rings.Clear(); _cooldowns.Clear(); _magnetAt = 0f; }
+        private void OnLevelWasLoaded(int level) { _boost.Clear(); _rings.Clear(); _dots.Clear(); _readyAt.Clear(); _shockHolders.Clear(); _holdersAt = 0f; _magnetAt = 0f; }
 
-        private static float _shotAt = -1f, _shotAt2 = -1f;
+        private static float _shotAt = -1f, _shotAt2 = -1f, _shotAt3 = -1f;
         private static int _shots;
 
         private void Update()
         {
             if (_shotAt > 0f && Time.unscaledTime >= _shotAt) { _shotAt = -1f; TestHarness.Shot("fx_event_" + (++_shots) + "_" + (Net.NetSession.ClientInMatch ? "client" : "host")); }
             if (_shotAt2 > 0f && Time.unscaledTime >= _shotAt2) { _shotAt2 = -1f; TestHarness.Shot("fx_cooldown_" + (Net.NetSession.ClientInMatch ? "client" : "host")); }
+            if (_shotAt3 > 0f && Time.unscaledTime >= _shotAt3) { _shotAt3 = -1f; TestHarness.Shot("fx_ready_" + (Net.NetSession.ClientInMatch ? "client" : "host")); }
             Boosts();
             Magnets();
-            Cooldowns();
+            Dots();
         }
 
-        // ------------------------------------------------------------------ Shockwave cooldown
-        // An arc around the player that fills up clockwise from the top while Shockwave recharges, then flashes once when ready.
+        // ------------------------------------------------------------------ Shockwave ready dot
+        // Players with Shockwave get a yellow dot in the middle of their ball while it's ready; it goes away for the cooldown.
 
-        private sealed class Cooldown { public float Start, Length; public LineRenderer Line, Track; }
-        private static readonly Dictionary<BallData, Cooldown> _cooldowns = new Dictionary<BallData, Cooldown>();
-        private static readonly Color CooldownColor = new Color(0.25f, 0.6f, 1f);
-        private const int ArcSegments = 48;
-        private const float ReadyFlash = 0.35f;
+        private static readonly Dictionary<BallData, float> _readyAt = new Dictionary<BallData, float>(); // every PC: when the cooldown ends
+        private static readonly Dictionary<BallData, LineRenderer> _dots = new Dictionary<BallData, LineRenderer>();
+        private static readonly HashSet<BallData> _shockHolders = new HashSet<BallData>();
+        private static float _holdersAt;
+        private static readonly Color DotColor = new Color(1f, 0.85f, 0.15f);
+        private static Material _dotMat;
 
         /// <summary>Every PC: this ball's Shockwave went off and is recharging for <paramref name="seconds"/>.</summary>
         internal static void ShockwaveCooldown(BallData b, float seconds)
         {
             if (b == null || seconds <= 0f) return;
-            Cooldown c;
-            if (!_cooldowns.TryGetValue(b, out c)) _cooldowns[b] = c = new Cooldown();
-            c.Start = Time.time;
-            c.Length = seconds;
+            _readyAt[b] = Time.time + seconds;
             if (TestHarness.FxShots) _shotAt2 = Time.unscaledTime + 2.5f;
         }
 
-        private static void Cooldowns()
+        private static void ClearDots()
         {
-            if (_cooldowns.Count == 0) return;
+            foreach (var d in _dots.Values) if (d != null) Destroy(d.gameObject);
+            _dots.Clear();
+            _readyAt.Clear();
+            _shockHolders.Clear();
+            _holdersAt = 0f;
+        }
+
+        private static void Dots()
+        {
+            if (Time.unscaledTime >= _holdersAt)
+            {
+                _holdersAt = Time.unscaledTime + 0.5f;
+                _shockHolders.Clear();
+                foreach (var s in CardGame.Seats)
+                    if (s.Ball != null && CardEffects.StatsOf(s).Shockwave > 0) _shockHolders.Add(s.Ball);
+                _done.Clear();
+                foreach (var kv in _dots) if (kv.Key == null || !_shockHolders.Contains(kv.Key)) _done.Add(kv.Key);
+                foreach (var b in _done) { var d = _dots[b]; if (d != null) Destroy(d.gameObject); _dots.Remove(b); }
+            }
+            if (_shockHolders.Count == 0) return;
             var gm = Globals.gameManager;
             var hide = gm == null || gm.replayManager != null && gm.replayManager.replaying || CardGame.PhaseActive;
-            _done.Clear();
-            foreach (var kv in _cooldowns)
+            foreach (var b in _shockHolders)
             {
-                var b = kv.Key;
-                var c = kv.Value;
-                var t = Time.time - c.Start;
-                if (b == null || t > c.Length + ReadyFlash) { _done.Add(b); continue; }
-                if (c.Line == null)
+                if (b == null) continue;
+                LineRenderer dot;
+                if (!_dots.TryGetValue(b, out dot) || dot == null)
                 {
-                    c.Line = MakeCircle("UltraPuck_ShockwaveCooldown");
-                    c.Line.useWorldSpace = true;
-                    c.Track = MakeCircle("UltraPuck_ShockwaveCooldownTrack"); // a dark full ring behind the arc
-                    var tc = new Color(0.05f, 0.08f, 0.15f, 0.45f);
-                    c.Track.SetColors(tc, tc);
+                    dot = MakeCircle("UltraPuck_ShockwaveReady");
+                    if (_dotMat == null) { _dotMat = new Material(LineMat()) { renderQueue = 3500 }; } // drawn after the ball's symbol
+                    dot.material = _dotMat;
+                    dot.SetColors(DotColor, DotColor);
+                    _dots[b] = dot;
+                    if (TestHarness.FxShots) _shotAt3 = Time.unscaledTime + 3f;
                 }
-                var lr = c.Line;
-                var show = !hide && b.alive && !b.fallen && !Invisibility.IsInvisible(b);
-                lr.enabled = show;
-                c.Track.enabled = show && t < c.Length;
+                float ready;
+                var cooling = _readyAt.TryGetValue(b, out ready) && Time.time < ready;
+                var show = !hide && !cooling && b.alive && !b.fallen && !Invisibility.IsInvisible(b);
+                dot.enabled = show;
                 if (!show) continue;
+                // a filled disc: a ring as wide as its radius, on top of the ball (towards the camera)
+                var R = CardEffects.Radius(b.GetComponent<Collider2D>());
+                var r = R * 0.16f;
                 var p = b.transform.position;
-                var r = CardEffects.Radius(b.GetComponent<Collider2D>()) * 1.45f;
-                var z = p.z - 0.05f;
-                c.Track.transform.position = new Vector3(p.x, p.y, z + 0.01f);
-                c.Track.transform.localScale = new Vector3(r, r, 1f);
-                var tw = 0.13f / Mathf.Max(0.01f, r);
-                c.Track.SetWidth(tw, tw);
-                float fill, alpha, width;
-                if (t < c.Length) { fill = t / c.Length; alpha = 0.95f; width = 0.1f; }
-                else { var k = (t - c.Length) / ReadyFlash; fill = 1f; alpha = 1f - k; width = 0.1f + 0.14f * (1f - k); } // ready: a quick bright flash
-                var n = Mathf.Max(2, Mathf.CeilToInt(fill * ArcSegments) + 1);
-                lr.SetVertexCount(n);
-                for (var i = 0; i < n; i++)
-                {
-                    var a = Mathf.PI / 2f - fill * Mathf.PI * 2f * i / (n - 1); // from the top, clockwise
-                    lr.SetPosition(i, new Vector3(p.x + Mathf.Cos(a) * r, p.y + Mathf.Sin(a) * r, z));
-                }
-                lr.SetWidth(width, width);
-                var col = new Color(CooldownColor.r, CooldownColor.g, CooldownColor.b, alpha);
-                lr.SetColors(col, col);
-            }
-            foreach (var b in _done)
-            {
-                Cooldown c;
-                if (_cooldowns.TryGetValue(b, out c) && c.Line != null) { Destroy(c.Line.gameObject); Destroy(c.Track.gameObject); }
-                _cooldowns.Remove(b);
+                // on the top of the ball's model (the face the camera sees), nudged toward the camera
+                var cam = Camera.main;
+                var top = new Vector3(p.x, p.y, p.z - R);
+                var mesh = b.ballMesh != null ? b.ballMesh.GetComponentInChildren<Renderer>() : null;
+                if (mesh != null) { var bb = mesh.bounds; top = new Vector3(bb.center.x, bb.center.y, bb.min.z); }
+                var toCam = cam != null ? (cam.transform.position - top).normalized : Vector3.back;
+                dot.transform.position = top + toCam * 0.12f; // in front of the symbol painted on the ball
+                if (cam != null) dot.transform.rotation = Quaternion.LookRotation(-toCam, Vector3.up);
+                dot.transform.localScale = new Vector3(r, r, 1f);
+                dot.SetWidth(2f * r, 2f * r); // world units: the ring covers 0..2r, a solid dot of radius 2r
             }
         }
 
