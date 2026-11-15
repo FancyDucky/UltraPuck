@@ -13,6 +13,9 @@ namespace CP99Online.Net
         private const byte KindUnreliable = 0;
         private const byte KindReliable = 1;
         private const byte KindAck = 2;
+        private const byte KindPing = 3; // f32 sender's time; answered with KindPong carrying the same time
+        private const byte KindPong = 4;
+        private const float PingInterval = 1f;
         private const float ResendInterval = 0.2f;
 
         private sealed class Pending
@@ -31,6 +34,10 @@ namespace CP99Online.Net
         private readonly Writer _w = new Writer();
         private ushort _nextSend = 1;
         private ushort _nextExpected = 1;
+        private float _pingSentAt = -999f;
+
+        /// <summary>Round-trip time in seconds (smoothed), or -1 until the first answer (older versions never answer).</summary>
+        public float Ping = -1f;
 
         public Connection(ITransport transport, int peerId, float now)
         {
@@ -63,6 +70,13 @@ namespace CP99Online.Net
 
         public void Update(float now)
         {
+            if (now - _pingSentAt >= PingInterval)
+            {
+                _pingSentAt = now;
+                var bits = System.BitConverter.GetBytes(now);
+                var ping = new byte[] { KindPing, bits[0], bits[1], bits[2], bits[3] };
+                _transport.Send(PeerId, ping, ping.Length);
+            }
             for (var i = 0; i < _unacked.Count; i++)
             {
                 var p = _unacked[i];
@@ -111,6 +125,16 @@ namespace CP99Online.Net
             {
                 var ack = (ushort)(data[1] | (data[2] << 8));
                 _unacked.RemoveAll(p => !Newer(p.Seq, ack));
+            }
+            else if (kind == KindPing && length >= 5)
+            {
+                var pong = new byte[] { KindPong, data[1], data[2], data[3], data[4] };
+                _transport.Send(PeerId, pong, pong.Length);
+            }
+            else if (kind == KindPong && length >= 5)
+            {
+                var rtt = now - System.BitConverter.ToSingle(data, 1);
+                if (rtt >= 0f && rtt < 5f) Ping = Ping < 0f ? rtt : Ping + (rtt - Ping) * 0.3f;
             }
         }
 

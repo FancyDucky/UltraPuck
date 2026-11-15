@@ -168,6 +168,8 @@ namespace CP99Online.Rounds
 
         // ------------------------------------------------------------------ drawing
 
+        private static readonly bool ForcePanelTest = System.Environment.GetEnvironmentVariable("CP99_TEST_PANEL") == "1"; // tests: always show the corner panel
+
         private void OnGUI()
         {
             if (Event.current.type == EventType.Layout) _panelRect = new Rect();
@@ -182,9 +184,10 @@ namespace CP99Online.Rounds
                 if (CardGame.Revealing) DrawReveal(u); else DrawPicking(u);
             }
 
-            var showPanel = CardGame.PhaseActive ||
+            var showPanel = CardGame.PhaseActive || ForcePanelTest ||
                 (RoundsMode.Instance != null && RoundsMode.Instance.ShowDuringPlay.Value && (RoundsMode.Active || !CardGame.IsAuthority));
             if (showPanel && CardGame.Seats.Any(s => s.Cards.Count > 0)) DrawPanel(u);
+            if (showPanel) DrawPing(u);
 
             if (_tipTitle != null) DrawTooltip(u);
         }
@@ -327,6 +330,27 @@ namespace CP99Online.Rounds
         }
 
         /// <summary>Everyone's cards, lower-left. Hover a card for its description.</summary>
+        /// <summary>Online: the round-trip time to the host (client) or to each joined player (host), top right.</summary>
+        private void DrawPing(float u)
+        {
+            var s = Net.NetSession.Instance;
+            if (s == null || !Net.Match.Active) return;
+            var pings = s.Pings();
+            if (pings.Count == 0) return;
+            var lineH = 22 * u;
+            var w = 230 * u;
+            var box = new Rect(Screen.width - w - 12 * u, 12 * u, w, 8 * u + lineH * pings.Count);
+            Fill(box, new Color(0.08f, 0.08f, 0.1f, 0.75f));
+            for (var i = 0; i < pings.Count; i++)
+            {
+                var ms = pings[i].Value;
+                var style = new GUIStyle(_small) { alignment = TextAnchor.MiddleRight, fontSize = Mathf.RoundToInt(15 * u) };
+                style.normal.textColor = ms < 0f ? new Color(0.75f, 0.75f, 0.75f) : ms < 0.06f ? new Color(0.5f, 0.9f, 0.5f) : ms < 0.12f ? new Color(1f, 0.85f, 0.35f) : new Color(1f, 0.45f, 0.45f);
+                var label = (pings.Count == 1 ? "Ping" : pings[i].Key) + "  " + (ms < 0f ? "-" : Mathf.RoundToInt(ms * 1000f) + " ms");
+                Label(new Rect(box.x + 8 * u, box.y + 4 * u + lineH * i, w - 16 * u, lineH), label, style);
+            }
+        }
+
         private void DrawPanel(float u)
         {
             var seats = CardGame.Seats;

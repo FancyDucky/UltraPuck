@@ -230,10 +230,11 @@ namespace CP99Online
             var scene = Application.loadedLevelName;
             if (_role == "host")
             {
-                if (_step == 0 && s.ClientCount > 0 && scene == "MainMenu" && t > 25f && ProfileManager.Instance != null)
+                if (_step == 0 && s.ClientCount > 0 && (scene == "MainMenu" || scene == "PlayerSelection") && t > 25f && ProfileManager.Instance != null)
                 {
-                    Application.LoadLevel("PlayerSelection");
-                    Next(t, "host opens player selection");
+                    // the host goes to player select by itself when someone joins; open it here if it hasn't
+                    if (scene == "MainMenu") Application.LoadLevel("PlayerSelection");
+                    Next(t, scene == "MainMenu" ? "host opens player selection" : "host is at player selection (went there when the client joined)");
                 }
                 else if (_step == 1 && NetSession.InPlayerSelection && t - _stepAt > 4f)
                 {

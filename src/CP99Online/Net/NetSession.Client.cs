@@ -216,6 +216,15 @@ namespace CP99Online.Net
             NetLog.Info(Status);
         }
 
+        /// <summary>Client: ask the host to bring everyone to player select (it does when it's on its main menu).</summary>
+        internal void ClientGoToPlayerSelect()
+        {
+            if (!IsClient || _conns.Count == 0) return;
+            Begin(Msg.GoToPlayerSelect);
+            _conns.Values.First().SendReliable(_msg, Now);
+            NetLog.Info("Asked the host to go to player select");
+        }
+
         private void ClientReset()
         {
             Lobby.Clear();

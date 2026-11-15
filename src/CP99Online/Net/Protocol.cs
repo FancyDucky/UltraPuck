@@ -31,6 +31,7 @@ namespace CP99Online.Net
         Pylons,         // h->c  unreliable: u8 n, n x {f32 x, f32 y} Pylon Goalie positions
         Possess,        // h->c  bot switching: u8 n, n x {u8 home slot, u8 controlled slot}
         MapData,        // h->c  custom map for the next match, before StartMatch: u32 hash, u16 index, u16 count, u16 len, bytes (UTF-8 .upmap text)
+        GoToPlayerSelect, // c->h  a joined player asks everyone to meet at player select (the host goes there from its main menu)
     }
 
     internal enum Ev : byte

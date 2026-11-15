@@ -135,10 +135,12 @@ namespace CP99Online
                     break;
 
                 case Role.Client:
+                    if (s.Welcomed && Application.loadedLevelName == "MainMenu")
+                        items.Add(Item.Action(() => "Go to Player Select", () => s.ClientGoToPlayerSelect()));
                     items.Add(Item.Action(() => "Leave Game", () => s.Stop("You left")));
                     items.Add(InstantMovementItem());
                     items.Add(Item.Info(() => s.Welcomed
-                        ? "In " + (string.IsNullOrEmpty(s.HostName) ? "the host" : s.HostName) + "'s game. You'll follow the host to player select."
+                        ? "In " + (string.IsNullOrEmpty(s.HostName) ? "the host" : s.HostName) + "'s game. Everyone meets at player select."
                         : s.Status));
                     items.Add(Item.Info(() => s.Welcomed
                         ? string.Join(", ", s.Lobby.Select(e => e.Name).ToArray())

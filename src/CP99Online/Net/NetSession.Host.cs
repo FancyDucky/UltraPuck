@@ -69,6 +69,29 @@ namespace CP99Online.Net
         private readonly Shadow _puckShadow = new Shadow();
 
         public IEnumerable<ClientInfo> Clients { get { return _clients.Values.OrderBy(c => c.Id); } }
+
+        /// <summary>
+        /// Player select is where everyone meets: when someone joins (or a joined player asks) while the host is on
+        /// the main menu, the host's game goes there, and everyone follows it.
+        /// </summary>
+        private void HostMeetAtPlayerSelect(string why)
+        {
+            if (Match.Active || Application.loadedLevelName != "MainMenu") return;
+            NetLog.Info(why + ": going to player select");
+            Toast.Show(why + ": going to player select");
+            Application.LoadLevel("PlayerSelection");
+        }
+
+        /// <summary>Round-trip times to show: host = each joined player's, client = to the host (seconds, -1 = unknown).</summary>
+        internal List<KeyValuePair<string, float>> Pings()
+        {
+            var list = new List<KeyValuePair<string, float>>();
+            if (Role == Role.Host)
+                foreach (var c in Clients) list.Add(new KeyValuePair<string, float>(c.Name, c.Conn != null ? c.Conn.Ping : -1f));
+            else if (Role == Role.Client && _conns.Count > 0)
+                list.Add(new KeyValuePair<string, float>(string.IsNullOrEmpty(HostName) ? "Host" : HostName, _conns.Values.First().Ping));
+            return list;
+        }
         public int ClientCount { get { return _clients.Count; } }
         public bool WaitingForClients { get { return _holdingStart; } }
 
@@ -168,8 +191,12 @@ namespace CP99Online.Net
                     Toast.Show(name + " joined");
                     BroadcastLobby();
                     HostSendSceneTo(ci);
+                    HostMeetAtPlayerSelect(name + " joined");
                     break;
                 }
+                case Msg.GoToPlayerSelect:
+                    if (ci != null) HostMeetAtPlayerSelect(ci.Name + " asked to go to player select");
+                    break;
                 case Msg.BoxReq:
                     if (ci != null) { var local = r.U8(); HostHandleBoxRequest(ci, local, r.U8()); }
                     break;
