@@ -117,6 +117,9 @@ namespace CP99Online
 
         private static string _roleStatic;
 
+        /// <summary>True in test instances (CP99_TEST set).</summary>
+        internal static readonly bool Active = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CP99_TEST"));
+
         /// <summary>CP99_TEST_SHOCK=1 (host): before the test dash, line the opponents up in front of the dasher (Shockwave).</summary>
         internal static readonly bool ShockTest = Environment.GetEnvironmentVariable("CP99_TEST_SHOCK") == "1";
 

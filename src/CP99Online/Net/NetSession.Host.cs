@@ -79,7 +79,7 @@ namespace CP99Online.Net
             if (Role != Role.None) return;
             try
             {
-                _transport = UdpTransport.Listen(bindAddress, port);
+                _transport = LagTransport.Wrap(UdpTransport.Listen(bindAddress, port));
             }
             catch (Exception e)
             {
@@ -364,6 +364,29 @@ namespace CP99Online.Net
             SendSnapshot(gm);
         }
 
+        // Teleport counters: bumped when a player or the puck jumps somewhere (bot swap), so clients jump it there
+        // instead of blending between its old and new spot.
+        private static readonly Dictionary<BallData, byte> _teleports = new Dictionary<BallData, byte>();
+        private static byte _puckTeleport;
+
+        /// <summary>Host: this player just teleported (clients snap instead of sliding).</summary>
+        internal static void MarkTeleport(BallData b)
+        {
+            if (b == null) return;
+            byte n;
+            _teleports.TryGetValue(b, out n);
+            _teleports[b] = (byte)(n + 1);
+        }
+
+        /// <summary>Host: the puck just teleported.</summary>
+        internal static void MarkPuckTeleport() { _puckTeleport++; }
+
+        private static byte TeleportOf(BallData b)
+        {
+            byte n;
+            return b != null && _teleports.TryGetValue(b, out n) ? n : (byte)0;
+        }
+
         private void SendSnapshot(GameManager gm)
         {
             var rm = gm.replayManager;
@@ -398,6 +421,7 @@ namespace CP99Online.Net
                 _msg.U8(bf);
                 var bh = b.GetComponent<BallHandling>();
                 _msg.U8((byte)Mathf.Clamp(bh.ballCharge / Proto.ChargeScale * 255f, 0f, 255f));
+                _msg.U8(TeleportOf(b));
             }
             var pp = gm.puck.transform.position;
             _msg.F32(pp.x); _msg.F32(pp.y);
@@ -405,6 +429,7 @@ namespace CP99Online.Net
             var carrier = puck.carryer != null ? Match.Slot(puck.carryer.GetComponent<BallData>()) : -1;
             _msg.U8(carrier < 0 ? (byte)255 : (byte)carrier);
             _msg.Bool(puck.disrespecting);
+            _msg.U8(_puckTeleport);
             BroadcastUnreliable();
         }
 

@@ -55,13 +55,15 @@ namespace CP99Online.Rounds
 
         internal static void Clear()
         {
+            foreach (var s in _slowRings.Values) if (s.Line != null) Destroy(s.Line.gameObject);
+            _slowRings.Clear();
             ClearDots();
             _boost.Clear();
             foreach (var r in _rings.Values) if (r != null) Destroy(r.gameObject);
             _rings.Clear();
         }
 
-        private void OnLevelWasLoaded(int level) { _boost.Clear(); _rings.Clear(); _dots.Clear(); _readyAt.Clear(); _shockHolders.Clear(); _holdersAt = 0f; _magnetAt = 0f; }
+        private void OnLevelWasLoaded(int level) { _slowRings.Clear(); _boost.Clear(); _rings.Clear(); _dots.Clear(); _readyAt.Clear(); _shockHolders.Clear(); _holdersAt = 0f; _magnetAt = 0f; }
 
         private static float _shotAt = -1f, _shotAt2 = -1f, _shotAt3 = -1f;
         private static int _shots;
@@ -74,6 +76,55 @@ namespace CP99Online.Rounds
             Boosts();
             Magnets();
             Dots();
+            Slows();
+        }
+
+        // ------------------------------------------------------------------ Shockwave slow
+        // A slowed player gets an icy ring around them that pulses slowly until the slow wears off.
+
+        private sealed class SlowRing { public float Until; public LineRenderer Line; }
+        private static readonly Dictionary<BallData, SlowRing> _slowRings = new Dictionary<BallData, SlowRing>();
+        private static readonly Color SlowColor = new Color(0.55f, 0.85f, 1f);
+
+        /// <summary>Every PC: this ball is slowed for <paramref name="seconds"/> (a Shockwave hit).</summary>
+        internal static void Slowed(BallData b, float seconds)
+        {
+            if (b == null) return;
+            SlowRing s;
+            if (!_slowRings.TryGetValue(b, out s)) _slowRings[b] = s = new SlowRing();
+            s.Until = Time.time + seconds;
+        }
+
+        private static void Slows()
+        {
+            if (_slowRings.Count == 0) return;
+            var gm = Globals.gameManager;
+            var hide = gm == null || gm.replayManager != null && gm.replayManager.replaying || CardGame.PhaseActive;
+            _done.Clear();
+            foreach (var kv in _slowRings)
+            {
+                var b = kv.Key;
+                var s = kv.Value;
+                var left = s.Until - Time.time;
+                if (b == null || left <= 0f) { _done.Add(b); continue; }
+                if (s.Line == null) s.Line = MakeCircle("UltraPuck_Slowed");
+                var show = !hide && b.alive && !b.fallen && !Invisibility.IsInvisible(b);
+                s.Line.enabled = show;
+                if (!show) continue;
+                var r = CardEffects.Radius(b.GetComponent<Collider2D>()) * (1.25f + 0.08f * Mathf.Sin(Time.time * 5f));
+                var p = b.transform.position;
+                s.Line.transform.position = new Vector3(p.x, p.y, p.z - 0.05f);
+                s.Line.transform.localScale = new Vector3(r, r, 1f);
+                s.Line.SetWidth(0.09f, 0.09f);
+                var col = new Color(SlowColor.r, SlowColor.g, SlowColor.b, Mathf.Clamp01(left / 0.5f) * 0.9f); // fades out at the end
+                s.Line.SetColors(col, col);
+            }
+            foreach (var b in _done)
+            {
+                SlowRing s;
+                if (_slowRings.TryGetValue(b, out s) && s.Line != null) Destroy(s.Line.gameObject);
+                _slowRings.Remove(b);
+            }
         }
 
         // ------------------------------------------------------------------ Shockwave ready dot

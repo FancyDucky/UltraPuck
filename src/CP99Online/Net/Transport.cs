@@ -227,3 +227,66 @@ namespace CP99Online.Net
         }
     }
 }
+
+namespace CP99Online.Net
+{
+    /// <summary>
+    /// Tests only (CP99_TEST_LAG="ms,wobbleMs[,lossPercent]"): holds every incoming packet back by a delay (plus a
+    /// random wobble, which can reorder packets like the real internet) and drops some, so online play can be tried
+    /// at realistic ping on one PC. Set it on both test instances for a round trip of about 2 x ms.
+    /// </summary>
+    internal sealed class LagTransport : ITransport
+    {
+        private struct Held { public float At; public int Peer; public byte[] Data; public int Length; }
+
+        private readonly ITransport _inner;
+        private readonly float _delay, _wobble, _loss;
+        private readonly List<Held> _held = new List<Held>();
+        private readonly System.Random _rng = new System.Random();
+
+        private LagTransport(ITransport inner, float delay, float wobble, float loss)
+        {
+            _inner = inner; _delay = delay; _wobble = wobble; _loss = loss;
+        }
+
+        /// <summary>The transport itself, or wrapped in a LagTransport when CP99_TEST_LAG is set.</summary>
+        internal static ITransport Wrap(ITransport inner)
+        {
+            var env = Environment.GetEnvironmentVariable("CP99_TEST_LAG");
+            if (string.IsNullOrEmpty(env) || inner == null) return inner;
+            var parts = env.Split(',');
+            float ms, wob = 0f, loss = 0f;
+            if (!float.TryParse(parts[0], out ms)) return inner;
+            if (parts.Length > 1) float.TryParse(parts[1], out wob);
+            if (parts.Length > 2) float.TryParse(parts[2], out loss);
+            NetLog.Info("TEST lag: incoming packets held " + ms + " ms (+0-" + wob + " ms), " + loss + "% dropped");
+            return new LagTransport(inner, ms / 1000f, wob / 1000f, loss / 100f);
+        }
+
+        public string Name { get { return _inner.Name; } }
+        public void Send(int peer, byte[] data, int length) { _inner.Send(peer, data, length); }
+        public void Disconnect(int peer) { _inner.Disconnect(peer); }
+        public void Dispose() { _inner.Dispose(); }
+
+        public bool Receive(out int peer, out byte[] data, out int length)
+        {
+            var now = UnityEngine.Time.realtimeSinceStartup;
+            int p; byte[] d; int n;
+            while (_inner.Receive(out p, out d, out n))
+            {
+                if (_rng.NextDouble() < _loss) continue;
+                var copy = new byte[n];
+                Buffer.BlockCopy(d, 0, copy, 0, n);
+                _held.Add(new Held { At = now + _delay + (float)_rng.NextDouble() * _wobble, Peer = p, Data = copy, Length = n });
+            }
+            var best = -1;
+            for (var i = 0; i < _held.Count; i++)
+                if (_held[i].At <= now && (best < 0 || _held[i].At < _held[best].At)) best = i;
+            if (best < 0) { peer = -1; data = null; length = 0; return false; }
+            var h = _held[best];
+            _held.RemoveAt(best);
+            peer = h.Peer; data = h.Data; length = h.Length;
+            return true;
+        }
+    }
+}

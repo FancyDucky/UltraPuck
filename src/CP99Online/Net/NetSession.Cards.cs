@@ -117,6 +117,7 @@ namespace CP99Online.Net
             _msg.U8(slot < 0 ? 255 : slot);
             _msg.F32(pos.x); _msg.F32(pos.y);
             _msg.F32(vel.x); _msg.F32(vel.y);
+            _msg.F32(Now); // when it was fired (host clock), so clients draw it in step with the players
             BroadcastReliable();
         }
 
@@ -128,6 +129,7 @@ namespace CP99Online.Net
             _msg.U8(1);
             _msg.U16(id);
             _msg.F32(at.x); _msg.F32(at.y);
+            _msg.F32(Now); // when it ended (host clock)
             BroadcastReliable();
         }
 
@@ -153,6 +155,17 @@ namespace CP99Online.Net
         }
 
         /// <summary>Host: Friendly Fire boosted this slot (clients draw the particles).</summary>
+        /// <summary>Host: a Shockwave slowed this slot (clients draw the ring).</summary>
+        internal void HostSendSlow(int slot, float seconds)
+        {
+            if (_clients.Count == 0) return;
+            Begin(Msg.CardShot);
+            _msg.U8(6);
+            _msg.U8(slot);
+            _msg.F32(seconds);
+            BroadcastReliable();
+        }
+
         internal void HostSendBoost(int slot, float seconds)
         {
             if (_clients.Count == 0) return;
@@ -181,6 +194,7 @@ namespace CP99Online.Net
         private void ClientHandleShot(Reader r)
         {
             var kind = r.U8();
+            if (kind == 6) { int slowSlot = r.U8(); var secs = r.F32(); if (Match.Active) CardFx.Slowed(Match.Ball(slowSlot), secs); return; }
             if (kind == 4) { int boostSlot = r.U8(); var secs = r.F32(); if (Match.Active) CardFx.Boosted(Match.Ball(boostSlot), secs); return; }
             if (kind == 5)
             {
@@ -200,12 +214,13 @@ namespace CP99Online.Net
             if (kind == 2) { int stunSlot = r.U8(); var secs = r.F32(); if (Match.Active) Stun.ClientStunned(stunSlot, secs); return; }
             if (kind == 3) { int invSlot = r.U8(); var secs = r.F32(); if (Match.Active) Invisibility.Begin(Match.Ball(invSlot), secs); return; }
             var id = r.U16();
-            if (kind == 1) { var at = new UnityEngine.Vector2(r.F32(), r.F32()); CardObjects.ClientEndShot(id, at); return; }
+            if (kind == 1) { var at = new UnityEngine.Vector2(r.F32(), r.F32()); var endTime = r.F32(); CardObjects.ClientEndShot(id, at, endTime); return; }
             int team = r.U8();
             int slot = r.U8();
             var pos = new UnityEngine.Vector2(r.F32(), r.F32());
             var vel = new UnityEngine.Vector2(r.F32(), r.F32());
-            if (Match.Active) CardObjects.ClientShot(id, team, slot == 255 ? -1 : slot, pos, vel);
+            var fireTime = r.F32();
+            if (Match.Active) CardObjects.ClientShot(id, team, slot == 255 ? -1 : slot, pos, vel, fireTime);
         }
 
         // Pylon Goalie positions, ~20 times a second while any pylon exists (they can be bumped on the host).

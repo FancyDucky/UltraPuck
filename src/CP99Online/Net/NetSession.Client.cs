@@ -22,14 +22,106 @@ namespace CP99Online.Net
             public float TimeScale, Fader, TimeLeft;
             public byte Score0, Score1;
             public float[] X, Y, Rot;
-            public byte[] BallFlags, Charge;
+            public byte[] BallFlags, Charge, Teleport;
             public float PuckX, PuckY, PuckRot;
             public int Carrier;
             public bool Disrespect;
+            public byte PuckTeleport;
         }
 
-        /// <summary>Clients draw the world this far in the past (smooth movement between snapshots).</summary>
-        internal const float InterpDelay = 0.1f;
+        /// <summary>The longest clients ever draw the world in the past (a very wobbly connection).</summary>
+        internal const float InterpDelay = 0.2f;
+
+        // ---- playback clock
+        // Clients draw the world a little in the past, blending between the two snapshots around that moment. The
+        // moment is "host time now, minus a small buffer": host time comes from a clock offset that follows the
+        // fastest-arriving snapshots and only drifts gently, so a packet that's a few ms late or early never makes
+        // the picture jump. The buffer is sized from how much the connection's timing actually wobbles.
+        private const float MinDelay = 0.035f, MaxDelay = InterpDelay, ClockWindow = 2f;
+        private readonly List<KeyValuePair<float, float>> _clockSamples = new List<KeyValuePair<float, float>>(); // (local receive time, host time - local time)
+        private readonly List<float> _sortScratch = new List<float>();
+        private float _clockOffset, _renderDelay = 0.1f, _lastRenderTime;
+        private bool _clockReady;
+        private float _clockLogAt;
+
+        /// <summary>Client: the host time the world is drawn at right now (shots and players use the same clock).</summary>
+        internal float RenderTime { get { return _lastRenderTime; } }
+
+        /// <summary>Client: how far in the past the world is drawn right now, in seconds.</summary>
+        internal float RenderDelay { get { return _renderDelay; } }
+
+        private void ClockReset() { _clockSamples.Clear(); _clockReady = false; _renderDelay = 0.1f; _lastRenderTime = 0f; }
+
+        private void ClockSample(float hostTime, float now)
+        {
+            _clockSamples.Add(new KeyValuePair<float, float>(now, hostTime - now));
+            while (_clockSamples.Count > 0 && now - _clockSamples[0].Key > ClockWindow) _clockSamples.RemoveAt(0);
+        }
+
+        /// <summary>The playback time for this frame (host clock), moving smoothly forward.</summary>
+        private float ClockRenderTime(float now)
+        {
+            if (_clockSamples.Count == 0) return _lastRenderTime;
+            // the fastest packets show the true offset; slower ones were just delayed on the way
+            var best = float.MinValue;
+            foreach (var s in _clockSamples) if (s.Value > best) best = s.Value;
+            // the timing wobble: how far behind the fastest packets the slow ones arrive (95th percentile)
+            _sortScratch.Clear();
+            foreach (var s in _clockSamples) _sortScratch.Add(best - s.Value);
+            _sortScratch.Sort();
+            var jitter = _sortScratch[Mathf.Min(_sortScratch.Count - 1, (int)(_sortScratch.Count * 0.95f))];
+            var wantDelay = Mathf.Clamp(Proto.SendRate * 1.5f + jitter + 0.01f, MinDelay, MaxDelay);
+
+            var dt = Mathf.Max(0f, now - _clockNow);
+            _clockNow = now;
+            if (!_clockReady || Mathf.Abs(best - _clockOffset) > 0.25f)
+            {
+                _clockOffset = best; _renderDelay = wantDelay; _clockReady = true; // first snapshot, or a big jump (the host paused / hitched)
+                _lastRenderTime = now + _clockOffset - _renderDelay;
+                return _lastRenderTime;
+            }
+            // drift gently: the offset follows the fastest packets, the buffer grows fast and shrinks slowly
+            _clockOffset = Mathf.MoveTowards(_clockOffset, best, dt * 0.05f);
+            _renderDelay = Mathf.MoveTowards(_renderDelay, wantDelay, dt * (wantDelay > _renderDelay ? 0.5f : 0.02f));
+            var rt = now + _clockOffset - _renderDelay;
+            if (rt < _lastRenderTime) rt = _lastRenderTime; // never backwards
+            _lastRenderTime = rt;
+            if (now > _clockLogAt)
+            {
+                _clockLogAt = now + 10f;
+                NetLog.Info("Net clock: drawing " + Mathf.RoundToInt(_renderDelay * 1000f) + " ms in the past (timing wobble " + Mathf.RoundToInt(jitter * 1000f) + " ms)");
+            }
+            return rt;
+        }
+
+        private float _clockNow;
+        private readonly byte[] _teleportSeen = new byte[32];
+
+        // Tests: how smoothly the playback clock moves. Each frame it should move forward exactly as much real time
+        // passed; the average mismatch is how much the picture stutters. The old clock (re-anchored on every
+        // snapshot, 100 ms behind) is measured alongside for comparison.
+        private float _smPrevOld = -1f, _smPrevNew = -1f, _smPrevNow, _smErrOld, _smErrNew, _smLogAt;
+        private int _smFrames;
+
+        private void MeasureSmoothness(float oldTime, float newTime)
+        {
+            var now = Now;
+            if (_smPrevOld >= 0f && _snaps.Count > 2)
+            {
+                var dt = now - _smPrevNow;
+                _smErrOld += Mathf.Abs((oldTime - _smPrevOld) - dt);
+                _smErrNew += Mathf.Abs((newTime - _smPrevNew) - dt);
+                _smFrames++;
+            }
+            _smPrevOld = oldTime; _smPrevNew = newTime; _smPrevNow = now;
+            if (_smFrames >= 300 && now > _smLogAt)
+            {
+                _smLogAt = now + 5f;
+                NetLog.Info("TEST smoothness: clock stutter per frame old " + (_smErrOld / _smFrames * 1000f).ToString("F2") + " ms, new " +
+                    (_smErrNew / _smFrames * 1000f).ToString("F2") + " ms; drawing " + Mathf.RoundToInt(_renderDelay * 1000f) + " ms behind (old: 100 ms)");
+                _smErrOld = _smErrNew = 0f; _smFrames = 0;
+            }
+        }
 
         public readonly List<LobbyEntry> Lobby = new List<LobbyEntry>();
         public string HostName { get; private set; }
@@ -72,7 +164,7 @@ namespace CP99Online.Net
             if (Role != Role.None) return;
             try
             {
-                _transport = UdpTransport.Connect(host, port);
+                _transport = LagTransport.Wrap(UdpTransport.Connect(host, port));
             }
             catch (Exception e)
             {
@@ -110,6 +202,7 @@ namespace CP99Online.Net
         {
             Lobby.Clear();
             _snaps.Clear();
+            ClockReset();
             Welcomed = false;
             _clientHold = false;
             _hostTimeLeft = 999f;
@@ -304,6 +397,7 @@ namespace CP99Online.Net
             PlayerSelectionManager_V2.players = players;
 
             _snaps.Clear();
+            ClockReset();
             _latestSnapSeq = 0;
             _wasReplaying = false;
             Time.timeScale = 1f;
@@ -490,21 +584,24 @@ namespace CP99Online.Net
             };
             int n = r.U8();
             s.X = new float[n]; s.Y = new float[n]; s.Rot = new float[n];
-            s.BallFlags = new byte[n]; s.Charge = new byte[n];
+            s.BallFlags = new byte[n]; s.Charge = new byte[n]; s.Teleport = new byte[n];
             for (var i = 0; i < n; i++)
             {
                 s.X[i] = r.F32(); s.Y[i] = r.F32();
                 s.Rot[i] = Proto.UnpackAngle(r.U16());
                 s.BallFlags[i] = r.U8();
                 s.Charge[i] = r.U8();
+                s.Teleport[i] = r.U8();
             }
             s.PuckX = r.F32(); s.PuckY = r.F32();
             s.PuckRot = Proto.UnpackAngle(r.U16());
             var carrier = r.U8();
             s.Carrier = carrier == 255 ? -1 : carrier;
             s.Disrespect = r.Bool();
+            s.PuckTeleport = r.U8();
 
             _latestSnapRecv = Now;
+            ClockSample(s.Time, Now);
             _snaps.Add(s);
             if (_snaps.Count > 40) _snaps.RemoveAt(0);
         }
@@ -517,7 +614,8 @@ namespace CP99Online.Net
 
             // Render slightly in the past and interpolate between the two snapshots around that time.
             var latest = _snaps[_snaps.Count - 1];
-            var renderTime = latest.Time + (Now - _latestSnapRecv) - InterpDelay;
+            var renderTime = ClockRenderTime(Now);
+            if (TestHarness.Active) MeasureSmoothness(latest.Time + (Now - _latestSnapRecv) - 0.1f, renderTime);
             Snap a = latest, b = latest;
             var t = 0f;
             for (var i = _snaps.Count - 2; i >= 0; i--)
@@ -570,8 +668,10 @@ namespace CP99Online.Net
             {
                 var ball = Match.Balls[i];
                 var tr = ball.transform;
-                tr.position = new Vector3(Mathf.Lerp(a.X[i], b.X[i], t), Mathf.Lerp(a.Y[i], b.Y[i], t), tr.position.z);
-                tr.rotation = Quaternion.Euler(0f, 0f, Mathf.LerpAngle(a.Rot[i], b.Rot[i], t));
+                var bt = a.Teleport[i] != b.Teleport[i] ? 1f : t; // teleported (bot swap): jump, don't slide
+                if (b.Teleport[i] != _teleportSeen[i]) { _teleportSeen[i] = b.Teleport[i]; NetLog.Debug("Client: player " + i + " teleported (snapped)"); }
+                tr.position = new Vector3(Mathf.Lerp(a.X[i], b.X[i], bt), Mathf.Lerp(a.Y[i], b.Y[i], bt), tr.position.z);
+                tr.rotation = Quaternion.Euler(0f, 0f, Mathf.LerpAngle(a.Rot[i], b.Rot[i], bt));
 
                 var f = b.BallFlags[i];
                 ball.alive = (f & Proto.BAlive) != 0;
@@ -602,8 +702,9 @@ namespace CP99Online.Net
             }
 
             var pt = puckGo.transform;
-            pt.position = new Vector3(Mathf.Lerp(a.PuckX, b.PuckX, t), Mathf.Lerp(a.PuckY, b.PuckY, t), pt.position.z);
-            pt.rotation = Quaternion.Euler(0f, 0f, Mathf.LerpAngle(a.PuckRot, b.PuckRot, t));
+            var ptt = a.PuckTeleport != b.PuckTeleport ? 1f : t;
+            pt.position = new Vector3(Mathf.Lerp(a.PuckX, b.PuckX, ptt), Mathf.Lerp(a.PuckY, b.PuckY, ptt), pt.position.z);
+            pt.rotation = Quaternion.Euler(0f, 0f, Mathf.LerpAngle(a.PuckRot, b.PuckRot, ptt));
             var carrierBall = Match.Ball(b.Carrier);
             puck.carryer = carrierBall != null ? carrierBall.gameObject : null;
             puck.disrespecting = b.Disrespect;

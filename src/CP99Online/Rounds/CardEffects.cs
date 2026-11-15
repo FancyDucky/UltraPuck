@@ -107,11 +107,36 @@ namespace CP99Online.Rounds
         /// <summary>Shockwave reach, in multiples of the hit player's radius (bigger with more copies).</summary>
         internal static float ShockwaveRange(int copies) { return copies <= 0 ? 0f : 3f * (1f + 0.15f * (Mathf.Min(copies, 3) - 1)); }
 
-        /// <summary>Stun on the opponents a shockwave pushes: 0.3 s, +0.1 s per extra copy.</summary>
-        internal static float ShockwaveStun(int copies) { return 0.3f + 0.1f * (Mathf.Clamp(copies, 1, 3) - 1); }
+        /// <summary>Slow on the opponents a shockwave hits: 30% slower, +5% per extra copy.</summary>
+        internal static float ShockwaveSlow(int copies) { return 0.30f + 0.05f * (Mathf.Clamp(copies, 1, 3) - 1); }
+
+        /// <summary>How long the slow lasts: 4 s, +1 s per extra copy.</summary>
+        internal static float ShockwaveSlowSeconds(int copies) { return 4f + 1f * (Mathf.Clamp(copies, 1, 3) - 1); }
 
         /// <summary>Seconds between one player's shockwaves.</summary>
-        internal const float ShockwaveCooldown = 5f;
+        internal const float ShockwaveCooldown = 7f;
+
+        private sealed class Slow { public float Until, Factor; }
+        private static readonly Dictionary<BallData, Slow> _slow = new Dictionary<BallData, Slow>();
+
+        /// <summary>Move speed multiplier from a Shockwave slow (0.7 = 30% slower), else 1.</summary>
+        internal static float SlowFactor(BallData b)
+        {
+            Slow s;
+            return b != null && _slow.TryGetValue(b, out s) && Time.time < s.Until ? s.Factor : 1f;
+        }
+
+        /// <summary>Host / offline: slow this player (a stronger or longer slow replaces a weaker one), on every PC.</summary>
+        private static void SlowDown(BallData b, float slow, float seconds)
+        {
+            Slow s;
+            var factor = 1f - slow;
+            if (_slow.TryGetValue(b, out s) && Time.time < s.Until && s.Factor <= factor && s.Until >= Time.time + seconds) return;
+            _slow[b] = new Slow { Until = Time.time + seconds, Factor = factor };
+            CardFx.Slowed(b, seconds);
+            var slot = Net.Match.Slot(b);
+            if (Net.NetSession.HostInMatch && slot >= 0) Net.NetSession.Instance.HostSendSlow(slot, seconds);
+        }
 
         private const float ShockwavePush = 0.8f; // x the dash check's own push
         private static readonly Dictionary<BallData, float> _shockAt = new Dictionary<BallData, float>();
@@ -125,8 +150,9 @@ namespace CP99Online.Rounds
             float last;
             if (_shockAt.TryGetValue(from, out last) && Time.time - last < ShockwaveCooldown) return;
             _shockAt[from] = Time.time;
-            var stun = ShockwaveStun(a.Stats.Shockwave);
-            Stun.Briefly(target, stun); // the one you dashed into is stunned too
+            var slow = ShockwaveSlow(a.Stats.Shockwave);
+            var slowFor = ShockwaveSlowSeconds(a.Stats.Shockwave);
+            SlowDown(target, slow, slowFor); // the one you dashed into is slowed too
             var gm = Globals.gameManager;
             var center = (Vector2)target.transform.position;
             var radius = Radius(target.GetComponent<Collider2D>()) * ShockwaveRange(a.Stats.Shockwave);
@@ -152,7 +178,7 @@ namespace CP99Online.Rounds
                     }
                     var v = b.GetComponent<BallVibrator>();
                     if (v != null) v.presetVibrate(rumblePreset.CheckHit);
-                    Stun.Briefly(b, stun);
+                    SlowDown(b, slow, slowFor);
                     pushed++;
                 }
             var team = gm.teams.IndexOf(from.team);
@@ -184,6 +210,7 @@ namespace CP99Online.Rounds
             _dash.Clear();
             _boostUntil.Clear();
             _shockAt.Clear();
+            _slow.Clear();
             CardFx.Clear();
             CardObjects.Clear();
         }
@@ -457,8 +484,9 @@ namespace CP99Online.Rounds
             if (!Same(GivenOf(st), 1f)) lines.Add(CardText.Stat(GivenOf(st), "Knockback Given", true));
             if (!Same(st.MoveSpeedWithPuck, 1f))
                 lines.Add(CardText.Neutral(Pct(Mathf.Clamp(st.MoveSpeed, 0.2f, 4f) * Mathf.Clamp(st.MoveSpeedWithPuck, 0.2f, 4f) * Mathf.Clamp(enemySlow, 0.2f, 1f)) + " Move Speed with the puck"));
-            if (st.Shockwave > 0) lines.Add(CardText.Good("Shockwave") + ": dashing into an opponent " + CardText.Good("stuns (" + ShockwaveStun(st.Shockwave).ToString("0.0") + " s)") +
-                " them and everyone near them, and pushes the others away  (" + ShockwaveRange(st.Shockwave).ToString("0.##") + "x a player's size, " + ShockwaveCooldown.ToString("0") + " s cooldown)");
+            if (st.Shockwave > 0) lines.Add(CardText.Good("Shockwave") + ": dashing into an opponent " +
+                CardText.Good("slows them and everyone near them by " + Mathf.RoundToInt(ShockwaveSlow(st.Shockwave) * 100f) + "% for " + ShockwaveSlowSeconds(st.Shockwave).ToString("0") + " s") +
+                "  (" + ShockwaveRange(st.Shockwave).ToString("0.##") + "x a player's size, " + ShockwaveCooldown.ToString("0") + " s cooldown)");
             if (!Same(st.Size, 1f)) lines.Add(CardText.Stat(Mathf.Clamp(st.Size, 0.3f, 3f), "Size", true, true));
             if (!Same(st.ShotPower, 1f)) lines.Add(CardText.Stat(Mathf.Clamp(st.ShotPower, 0.2f, 5f), "Shot Power", true));
             if (!Same(st.QuickShotPower, 1f)) lines.Add(CardText.Stat(Mathf.Clamp(st.QuickShotPower, 0.2f, 5f), "Quick Shot Power", true));
@@ -507,7 +535,7 @@ namespace CP99Online.Rounds
         {
             var a = CardEffects.AppliedOf(__instance);
             if (a == null || !CardGame.IsAuthority) return;
-            __instance.totalSpeed *= a.SpeedFactor * CardEffects.BoostFactor(__instance) *
+            __instance.totalSpeed *= a.SpeedFactor * CardEffects.BoostFactor(__instance) * CardEffects.SlowFactor(__instance) *
                 (__instance.carryObject != null ? Mathf.Clamp(a.Stats.MoveSpeedWithPuck, 0.2f, 4f) : 1f);
         }
     }

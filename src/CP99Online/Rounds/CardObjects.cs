@@ -228,21 +228,24 @@ namespace CP99Online.Rounds
         }
 
         /// <summary>Client: the host fired a shot (visual only; the host decides what it hits).</summary>
-        internal static void ClientShot(ushort id, int team, int slot, Vector2 pos, Vector2 vel)
+        internal static void ClientShot(ushort id, int team, int slot, Vector2 pos, Vector2 vel, float fireTime)
         {
             var shooter = Match.Ball(slot);
             if (shooter != null) _gunFiredAt[shooter] = Time.time;
             Spawn(id, team, pos, vel, null, false);
+            PuckGunShot s;
+            if (_shots.TryGetValue(id, out s) && s != null) { s.StartPos = pos; s.FireTime = fireTime; }
         }
 
         /// <summary>
-        /// Client: the host says the shot ended at <paramref name="at"/>. The client draws shots (like players)
-        /// InterpDelay late, so it is usually still on its way: let it fly there, then remove it.
+        /// Client: the host says the shot ended at <paramref name="at"/> at host time <paramref name="endTime"/>. The
+        /// client draws the world (players and shots) a little in the past, so the shot is usually still on its way:
+        /// it flies on until the playback clock reaches that moment, then disappears there.
         /// </summary>
-        internal static void ClientEndShot(ushort id, Vector2 at)
+        internal static void ClientEndShot(ushort id, Vector2 at, float endTime)
         {
             PuckGunShot s;
-            if (_shots.TryGetValue(id, out s) && s != null) { s.EndAt = at; s.HasEnd = true; }
+            if (_shots.TryGetValue(id, out s) && s != null) { s.EndAt = at; s.EndTime = endTime; s.HasEnd = true; }
             else EndShot(id);
         }
 
@@ -281,6 +284,7 @@ namespace CP99Online.Rounds
 
             var shot = go.AddComponent<PuckGunShot>();
             shot.Id = id; shot.Velocity = vel; shot.Owner = owner; shot.Team = team; shot.Authority = authority;
+            if (!authority) body.enabled = false; // clients: shown once the playback clock reaches the moment it was fired
             _shots[id] = shot;
         }
 
@@ -293,8 +297,11 @@ namespace CP99Online.Rounds
             public bool Authority;
             public Vector2 EndAt;
             public bool HasEnd;
+            // clients: where and when (host clock) it was fired, and when it ended
+            public Vector2 StartPos;
+            public float FireTime, EndTime;
             private float _age;
-            private float _wait = -1f;
+            private bool _shown;
             private int _wallMask;
 
             private void Start()
@@ -309,31 +316,39 @@ namespace CP99Online.Rounds
             private void Update()
             {
                 if (Authority) return; // the host moves its shots in FixedUpdate
-                // Clients see players NetSession.InterpDelay in the past; hold the shot back by the same amount so it
-                // lines up with them (otherwise it runs ahead and seems to pass through people the host says it missed).
+                // Clients: draw the shot on the same playback clock as the players (NetSession.RenderTime), so it
+                // leaves the shooter as they fire and stops where (and when) the host says it hit.
+                _age += Time.unscaledDeltaTime;
+                if (_age > ShotLife + 3f) { _shots.Remove(Id); Destroy(gameObject); return; } // safety net
+                var rt = NetSession.Instance != null ? NetSession.Instance.RenderTime : 0f;
                 var r = GetComponent<Renderer>();
-                if (_wait < 0f) { _wait = NetSession.InterpDelay; if (r != null) r.enabled = false; }
-                if (_wait > 0f)
+                if (rt <= 0f || rt < FireTime)
                 {
-                    _wait -= Time.deltaTime;
-                    if (_wait > 0f) return;
-                    if (r != null) r.enabled = true;
-                    var trail = GetComponent<TrailRenderer>();
-                    if (trail != null) trail.Clear();
+                    if (r != null) r.enabled = false; // not fired yet on the playback clock
+                    transform.position = new Vector3(StartPos.x, StartPos.y, transform.position.z);
+                    return;
                 }
-                var step = Velocity * Time.deltaTime;
-                var pos = (Vector2)transform.position;
-                if (HasEnd && Vector2.Dot(EndAt - (pos + step), Velocity) <= 0f)
+                var flown = rt - FireTime;
+                if (HasEnd && rt >= EndTime)
                 {
+                    NetLog.Debug("Client shot " + Id + ": drawn for " + (_shown ? (EndTime - FireTime).ToString("F2") + " s" : "0 s (ended before it was due)") + ", ends at " + EndAt);
                     transform.position = new Vector3(EndAt.x, EndAt.y, transform.position.z);
                     _shots.Remove(Id);
                     Destroy(gameObject, 0.02f);
                     enabled = false;
                     return;
                 }
-                transform.position += (Vector3)step;
-                _age += Time.deltaTime;
-                if (_age > ShotLife + 1f) { _shots.Remove(Id); Destroy(gameObject); }
+                var pos = StartPos + Velocity * flown;
+                if (HasEnd && Vector2.Dot(EndAt - pos, Velocity) < 0f) pos = EndAt; // never past where it hit
+                transform.position = new Vector3(pos.x, pos.y, transform.position.z);
+                if (!_shown)
+                {
+                    NetLog.Debug("Client shot " + Id + ": shown " + (_age * 1000f).ToString("F0") + " ms after its message arrived");
+                    _shown = true;
+                    if (r != null) r.enabled = true;
+                    var trail = GetComponent<TrailRenderer>();
+                    if (trail != null) trail.Clear();
+                }
             }
 
             private void FixedUpdate()

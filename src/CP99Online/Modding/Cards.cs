@@ -26,7 +26,7 @@ namespace UltraPuck
         public float KnockbackGiven = 1f;
         /// <summary>Extra move speed multiplier while you carry the puck, on top of MoveSpeed (0.88 with MoveSpeed 1.25 = +10% with the puck).</summary>
         public float MoveSpeedWithPuck = 1f;
-        /// <summary>Shockwave copies: your dash hits on opponents also push away every opponent near the one you hit.</summary>
+        /// <summary>Shockwave copies: your dash hits on opponents slow them and every opponent near them (30% for 4 s, +5% and +1 s per extra copy) and push the others away.</summary>
         public int Shockwave;
         /// <summary>Dash (boost) recharge time multiplier (0.5 = takes half as long).</summary>
         public float DashCooldown = 1f;
@@ -330,7 +330,7 @@ namespace UltraPuck
         public override CardTier Tier { get { return CardTier.A; } }
         public override string Id { get { return "ultrapuck.shockwave"; } }
         public override string Name { get { return "Shockwave"; } }
-        public override string Description { get { return "Dash into an opponent to " + CardText.Good("stun") + " them and everyone near them, and push the others away. 5s cooldown."; } }
+        public override string Description { get { return "Dash into an opponent to " + CardText.Good("slow") + " them and everyone near them by 30% for 4s, and push the others away. 7s cooldown."; } }
         public override Color Color { get { return new Color(0.35f, 0.65f, 1.00f); } }
         public override int MaxPerPlayer { get { return 3; } }
         public override void Apply(CardStats s) { s.Shockwave++; }

@@ -148,7 +148,7 @@ public class MyMod : UltraMod
 - `MoveSpeedWithPuck`: an extra speed multiplier while carrying the puck, on top of `MoveSpeed`.
 - `OpponentSpeed`, which slows every opponent.
 
-It also has `OverCharge` (0.5 = the charge can fill 50% past full, for a 50% harder shot; up to 2), `ExtraDashes`, `SpawnCloser` (0.2 = 20% closer to the puck at each face-off), `HeadStart` (copies: at every face-off the team with the most starts with the puck), `Pylons`, `PuckGun` (brake to fire), `FriendlyFire` (how hard you push teammates; 2.5 = +150%), `TeammateBoost` (a teammate's dash into you gives +80% move speed for 2 s, and a bot swap passes it on) and `Shockwave` (copies: your dash hits push away and briefly stun the opponents around the one you hit).
+It also has `OverCharge` (0.5 = the charge can fill 50% past full, for a 50% harder shot; up to 2), `ExtraDashes`, `SpawnCloser` (0.2 = 20% closer to the puck at each face-off), `HeadStart` (copies: at every face-off the team with the most starts with the puck), `Pylons`, `PuckGun` (brake to fire), `FriendlyFire` (how hard you push teammates; 2.5 = +150%), `TeammateBoost` (a teammate's dash into you gives +80% move speed for 2 s, and a bot swap passes it on) and `Shockwave` (copies: your dash hits slow the opponent you hit and the ones around them, and push those away).
 Override `Tier` (`CardTier.S`, `A`, `B`, `C`, `D` or `F`) to give the card a coloured tier border on the card select screen.
 Override `CanOffer(int teamSize)` to offer a card only to some players (the team size counts bots), and `OnByDefault` to have it start switched off in Toggle Cards.
 For anything else, override `ApplyToBall(BallData ball, int copies)`. It runs on the player's ball when they

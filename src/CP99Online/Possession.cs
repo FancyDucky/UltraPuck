@@ -169,11 +169,14 @@ namespace CP99Online
             Place(me, mr, new Vector3(bp.x, bp.y, mp.z), bq, bv);
             Place(bot, br, new Vector3(mp.x, mp.y, bp.z), mq, mv);
             Rounds.CardEffects.SwapBoost(me, bot); // a Friendly Fire boost comes with the bot's spot
+            NetSession.MarkTeleport(me); // clients jump both to their new spots instead of sliding
+            NetSession.MarkTeleport(bot);
 
             if (puck != null)
             {
                 var mh = me.GetComponent<BallHandling>();
                 if (mh != null) mh.Carry(puck);
+                NetSession.MarkPuckTeleport();
             }
         }
 
