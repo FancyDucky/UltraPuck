@@ -14,7 +14,7 @@ namespace CP99Online
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "cp99.online";
-        public const string Version = "0.9.8";
+        public const string Version = "0.9.9";
 
         internal static ManualLogSource Logger_;
         internal static ConfigEntry<bool> NoBoostSlowdown;
@@ -73,6 +73,7 @@ namespace CP99Online
 
             var harmony = new Harmony(Guid);
             harmony.PatchAll(typeof(Plugin).Assembly);
+            Patches.PadRemap.Install(harmony);
 
             var patched = 0;
             foreach (var method in harmony.GetPatchedMethods())
