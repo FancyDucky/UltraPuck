@@ -126,6 +126,7 @@ namespace CP99Online.Rounds
             if (_shockAt.TryGetValue(from, out last) && Time.time - last < ShockwaveCooldown) return;
             _shockAt[from] = Time.time;
             var stun = ShockwaveStun(a.Stats.Shockwave);
+            Stun.Briefly(target, stun); // the one you dashed into is stunned too
             var gm = Globals.gameManager;
             var center = (Vector2)target.transform.position;
             var radius = Radius(target.GetComponent<Collider2D>()) * ShockwaveRange(a.Stats.Shockwave);
@@ -456,8 +457,8 @@ namespace CP99Online.Rounds
             if (!Same(GivenOf(st), 1f)) lines.Add(CardText.Stat(GivenOf(st), "Knockback Given", true));
             if (!Same(st.MoveSpeedWithPuck, 1f))
                 lines.Add(CardText.Neutral(Pct(Mathf.Clamp(st.MoveSpeed, 0.2f, 4f) * Mathf.Clamp(st.MoveSpeedWithPuck, 0.2f, 4f) * Mathf.Clamp(enemySlow, 0.2f, 1f)) + " Move Speed with the puck"));
-            if (st.Shockwave > 0) lines.Add(CardText.Good("Shockwave") + ": your dash hits push away and " + CardText.Good("stun (" + ShockwaveStun(st.Shockwave).ToString("0.0") + " s)") +
-                " opponents nearby  (" + ShockwaveRange(st.Shockwave).ToString("0.##") + "x a player's size, " + ShockwaveCooldown.ToString("0") + " s cooldown)");
+            if (st.Shockwave > 0) lines.Add(CardText.Good("Shockwave") + ": dashing into an opponent " + CardText.Good("stuns (" + ShockwaveStun(st.Shockwave).ToString("0.0") + " s)") +
+                " them and everyone near them, and pushes the others away  (" + ShockwaveRange(st.Shockwave).ToString("0.##") + "x a player's size, " + ShockwaveCooldown.ToString("0") + " s cooldown)");
             if (!Same(st.Size, 1f)) lines.Add(CardText.Stat(Mathf.Clamp(st.Size, 0.3f, 3f), "Size", true, true));
             if (!Same(st.ShotPower, 1f)) lines.Add(CardText.Stat(Mathf.Clamp(st.ShotPower, 0.2f, 5f), "Shot Power", true));
             if (!Same(st.QuickShotPower, 1f)) lines.Add(CardText.Stat(Mathf.Clamp(st.QuickShotPower, 0.2f, 5f), "Quick Shot Power", true));

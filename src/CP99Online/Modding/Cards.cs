@@ -44,7 +44,7 @@ namespace UltraPuck
         public float SpawnCloser;
         /// <summary>Head Start copies: at every face-off, the team with the most starts with the puck (a tie: nobody).</summary>
         public int HeadStart;
-        /// <summary>Puck pick-up distance multiplier (1.2 = grab it from 20% further).</summary>
+        /// <summary>Puck pick-up distance multiplier (1.08 = grab it from 8% further).</summary>
         public float PickupRange = 1f;
         /// <summary>Pylons (a solid dummy player) placed in front of your team's net.</summary>
         public int Pylons;
@@ -284,10 +284,10 @@ namespace UltraPuck
         public override CardTier Tier { get { return CardTier.A; } }
         public override string Id { get { return "ultrapuck.puckmagnet"; } }
         public override string Name { get { return "Puck Magnet"; } }
-        public override string Description { get { return CardText.Stat(1.2f, "Pick-up Range", true); } }
+        public override string Description { get { return CardText.Stat(1.08f, "Pick-up Range", true) + "\nGrab a loose puck from further away."; } }
         public override Color Color { get { return new Color(0.90f, 0.35f, 0.65f); } }
-        public override int MaxPerPlayer { get { return 2; } }
-        public override void Apply(CardStats s) { s.PickupRange *= 1.2f; }
+        public override int MaxPerPlayer { get { return 3; } }
+        public override void Apply(CardStats s) { s.PickupRange += 0.08f; } // adds up: 3 cards = +24%
     }
 
     internal sealed class PuckGunCard : UltraCard
@@ -330,8 +330,7 @@ namespace UltraPuck
         public override CardTier Tier { get { return CardTier.A; } }
         public override string Id { get { return "ultrapuck.shockwave"; } }
         public override string Name { get { return "Shockwave"; } }
-        public override string Description { get { return "Dashing into an opponent sends out a " + CardText.Good("shockwave") + " that pushes away and " + CardText.Good("stuns (0.3 s)") + " opponents near them. 5 s cooldown." +
-            "\nMore copies: +15% range, +0.1 s stun."; } }
+        public override string Description { get { return "Dash into an opponent to " + CardText.Good("stun") + " them and everyone near them, and push the others away. 5s cooldown."; } }
         public override Color Color { get { return new Color(0.35f, 0.65f, 1.00f); } }
         public override int MaxPerPlayer { get { return 3; } }
         public override void Apply(CardStats s) { s.Shockwave++; }
