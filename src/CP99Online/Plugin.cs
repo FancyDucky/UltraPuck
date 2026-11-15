@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
@@ -14,7 +14,7 @@ namespace CP99Online
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "cp99.online";
-        public const string Version = "0.10.5";
+        public const string Version = "0.10.6";
 
         internal static ManualLogSource Logger_;
         internal static ConfigEntry<bool> NoBoostSlowdown;
@@ -27,6 +27,7 @@ namespace CP99Online
         internal static ConfigEntry<int> Port;
         internal static ConfigEntry<string> LastAddress;
         internal static ConfigEntry<ControllerChoice> OnlineController;
+        internal static ConfigEntry<bool> InstantOwnMovement;
         internal static ConfigEntry<bool> DeckDefaultsApplied;
         internal static ConfigEntry<bool> AutoUpdate;
         internal static string DllPath;
@@ -55,6 +56,8 @@ namespace CP99Online
             LastAddress = Config.Bind("Online", "LastAddress", "127.0.0.1", "Last address joined by direct IP.");
             OnlineController = Config.Bind("Online", "Controller", ControllerChoice.KeyboardMouse,
                 "What you play with when you join someone else's game.");
+            InstantOwnMovement = Config.Bind("Online", "InstantOwnMovement", true,
+                "When you join someone's game, draw your own player at the newest position from the host (about 50 ms sooner) instead of in step with everyone else.");
             SkipIntro = Config.Bind("General", "SkipIntro", true,
                 "Start straight at the main menu: no logo, no \"Press A to Begin\" title screen and no language picker (turn off to change the language).");
             OpenMenuOnStart = Config.Bind("Debug", "OpenMenuOnStart", false,

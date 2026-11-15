@@ -122,6 +122,7 @@ namespace CP99Online
                         items.Add(Item.Action(() => "Host Game (Direct IP)", () => s.StartHostDirect(Plugin.Port.Value, null)));
                     }
                     if (!SteamLobby.Available) items.Add(Item.Info(() => "Launch through Steam to host or join friends."));
+                    items.Add(InstantMovementItem());
                     break;
 
                 case Role.Host:
@@ -135,6 +136,7 @@ namespace CP99Online
 
                 case Role.Client:
                     items.Add(Item.Action(() => "Leave Game", () => s.Stop("You left")));
+                    items.Add(InstantMovementItem());
                     items.Add(Item.Info(() => s.Welcomed
                         ? "In " + (string.IsNullOrEmpty(s.HostName) ? "the host" : s.HostName) + "'s game. You'll follow the host to player select."
                         : s.Status));
@@ -144,6 +146,13 @@ namespace CP99Online
                     break;
             }
             return items;
+        }
+
+        /// <summary>Joining: draw your own player ~50 ms sooner (on) or in step with everyone else (off).</summary>
+        private static Item InstantMovementItem()
+        {
+            return Item.Action(() => "Instant Own Movement: " + (Plugin.InstantOwnMovement.Value ? "On" : "Off"),
+                () => Plugin.InstantOwnMovement.Value = !Plugin.InstantOwnMovement.Value);
         }
 
         private static string LobbyKey()

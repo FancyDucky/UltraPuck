@@ -110,8 +110,8 @@ namespace CP99Online.Rounds
         /// <summary>Slow on the opponents a shockwave hits: 30% slower, +5% per extra copy.</summary>
         internal static float ShockwaveSlow(int copies) { return 0.30f + 0.05f * (Mathf.Clamp(copies, 1, 3) - 1); }
 
-        /// <summary>How long the slow lasts: 4 s, +1 s per extra copy.</summary>
-        internal static float ShockwaveSlowSeconds(int copies) { return 4f + 1f * (Mathf.Clamp(copies, 1, 3) - 1); }
+        /// <summary>How long the slow lasts: 2 s, +0.5 s per extra copy.</summary>
+        internal static float ShockwaveSlowSeconds(int copies) { return 2f + 0.5f * (Mathf.Clamp(copies, 1, 3) - 1); }
 
         /// <summary>Seconds between one player's shockwaves.</summary>
         internal const float ShockwaveCooldown = 7f;
@@ -485,7 +485,7 @@ namespace CP99Online.Rounds
             if (!Same(st.MoveSpeedWithPuck, 1f))
                 lines.Add(CardText.Neutral(Pct(Mathf.Clamp(st.MoveSpeed, 0.2f, 4f) * Mathf.Clamp(st.MoveSpeedWithPuck, 0.2f, 4f) * Mathf.Clamp(enemySlow, 0.2f, 1f)) + " Move Speed with the puck"));
             if (st.Shockwave > 0) lines.Add(CardText.Good("Shockwave") + ": dashing into an opponent " +
-                CardText.Good("slows them and everyone near them by " + Mathf.RoundToInt(ShockwaveSlow(st.Shockwave) * 100f) + "% for " + ShockwaveSlowSeconds(st.Shockwave).ToString("0") + " s") +
+                CardText.Good("slows them and everyone near them by " + Mathf.RoundToInt(ShockwaveSlow(st.Shockwave) * 100f) + "% for " + ShockwaveSlowSeconds(st.Shockwave).ToString("0.#") + " s") +
                 "  (" + ShockwaveRange(st.Shockwave).ToString("0.##") + "x a player's size, " + ShockwaveCooldown.ToString("0") + " s cooldown)");
             if (!Same(st.Size, 1f)) lines.Add(CardText.Stat(Mathf.Clamp(st.Size, 0.3f, 3f), "Size", true, true));
             if (!Same(st.ShotPower, 1f)) lines.Add(CardText.Stat(Mathf.Clamp(st.ShotPower, 0.2f, 5f), "Shot Power", true));

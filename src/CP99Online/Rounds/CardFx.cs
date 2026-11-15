@@ -351,13 +351,13 @@ namespace CP99Online.Rounds
                 var show = !hide && b.alive && !b.fallen && b.carryObject == null && !Invisibility.IsInvisible(b);
                 lr.enabled = show;
                 if (!show) continue;
-                // the reach Puck Magnet grabs from: the puck's centre within (player + puck radius) x range
-                var r = (CardEffects.Radius(b.GetComponent<Collider2D>()) + puckR) * kv.Value;
+                // exactly where Puck Magnet grabs: the puck is grabbed once its centre is within (player + puck radius)
+                // x range of the player's centre, i.e. as soon as the puck's edge reaches this ring
+                var r = (CardEffects.Radius(b.GetComponent<Collider2D>()) + puckR) * kv.Value - puckR;
                 var p = b.transform.position;
                 lr.transform.position = new Vector3(p.x, p.y, p.z + 0.2f); // just under the ball
                 lr.transform.localScale = new Vector3(r, r, 1f);
-                var w = 0.08f / Mathf.Max(0.01f, r);
-                lr.SetWidth(w, w);
+                lr.SetWidth(0.06f, 0.06f); // a thin line, in world units
             }
         }
     }

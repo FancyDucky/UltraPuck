@@ -103,6 +103,22 @@ namespace CP99Online.Net
         private float _smPrevOld = -1f, _smPrevNew = -1f, _smPrevNow, _smErrOld, _smErrNew, _smLogAt;
         private int _smFrames;
 
+        // Tests: how evenly players move frame to frame (change in the per-frame step; lower = smoother), own vs others.
+        private readonly Vector3[] _mPrev = new Vector3[32], _mStep = new Vector3[32];
+        private float _mOwn, _mOther; private int _mOwnN, _mOtherN;
+
+        private void MeasureMotion(int i, bool own, Vector3 pos)
+        {
+            if (i >= _mPrev.Length) return;
+            var step = pos - _mPrev[i];
+            if (_mPrev[i] != Vector3.zero && step.magnitude < 2f)
+            {
+                var jerk = (step - _mStep[i]).magnitude;
+                if (own) { _mOwn += jerk; _mOwnN++; } else { _mOther += jerk; _mOtherN++; }
+            }
+            _mPrev[i] = pos; _mStep[i] = step;
+        }
+
         private void MeasureSmoothness(float oldTime, float newTime)
         {
             var now = Now;
@@ -118,7 +134,9 @@ namespace CP99Online.Net
             {
                 _smLogAt = now + 5f;
                 NetLog.Info("TEST smoothness: clock stutter per frame old " + (_smErrOld / _smFrames * 1000f).ToString("F2") + " ms, new " +
-                    (_smErrNew / _smFrames * 1000f).ToString("F2") + " ms; drawing " + Mathf.RoundToInt(_renderDelay * 1000f) + " ms behind (old: 100 ms)");
+                    (_smErrNew / _smFrames * 1000f).ToString("F2") + " ms; drawing " + Mathf.RoundToInt(_renderDelay * 1000f) + " ms behind (old: 100 ms); " +
+                    "motion unevenness own " + (_mOwnN > 0 ? (_mOwn / _mOwnN * 1000f).ToString("F1") : "-") + ", others " + (_mOtherN > 0 ? (_mOther / _mOtherN * 1000f).ToString("F1") : "-") + " (mm per frame)");
+                _mOwn = _mOther = 0f; _mOwnN = _mOtherN = 0;
                 _smErrOld = _smErrNew = 0f; _smFrames = 0;
             }
         }
@@ -616,24 +634,75 @@ namespace CP99Online.Net
             var latest = _snaps[_snaps.Count - 1];
             var renderTime = ClockRenderTime(Now);
             if (TestHarness.Active) MeasureSmoothness(latest.Time + (Now - _latestSnapRecv) - 0.1f, renderTime);
-            Snap a = latest, b = latest;
-            var t = 0f;
+            Snap a, b, la, lb;
+            float t, lt;
+            Find(renderTime, false, out a, out b, out t);
+            // This PC's own players skip the playback buffer: drawn at the host's present (the newest snapshot,
+            // carried forward by its speed for the few ms since), so your own movement shows ~50 ms sooner. The buffer
+            // only exists to blend other players smoothly; your own player doesn't need it.
+            Find(renderTime + _renderDelay, true, out la, out lb, out lt);
+            Apply(gm, a, b, t, la, lb, lt);
+        }
+
+        /// <summary>The two snapshots around host time <paramref name="time"/> and how far between them (past the newest one when extrapolating).</summary>
+        private void Find(float time, bool extrapolate, out Snap a, out Snap b, out float t)
+        {
+            var latest = _snaps[_snaps.Count - 1];
+            a = b = latest;
+            t = 0f;
+            if (_snaps.Count == 1) return;
+            if (time >= latest.Time)
+            {
+                a = _snaps[_snaps.Count - 2];
+                var span = latest.Time - a.Time;
+                if (!extrapolate || span <= 0.0001f) { t = 1f; return; }
+                t = 1f + Mathf.Min(time - latest.Time, 0.06f) / span; // carry on at the last speed, at most 60 ms
+                return;
+            }
             for (var i = _snaps.Count - 2; i >= 0; i--)
             {
-                if (_snaps[i].Time <= renderTime)
+                if (_snaps[i].Time <= time)
                 {
                     a = _snaps[i];
                     b = _snaps[i + 1];
                     var span = b.Time - a.Time;
-                    t = span > 0.0001f ? Mathf.Clamp01((renderTime - a.Time) / span) : 1f;
-                    break;
+                    t = span > 0.0001f ? Mathf.Clamp01((time - a.Time) / span) : 1f;
+                    return;
                 }
             }
-            if (a == latest && _snaps.Count > 1 && _snaps[0].Time > renderTime) { a = b = _snaps[0]; t = 0f; }
-            Apply(gm, a, b, t);
+            a = b = _snaps[0]; // older than everything we have
         }
 
-        private void Apply(GameManager gm, Snap a, Snap b, float t)
+        private static bool IsLocal(int slot) { return Match.LocalSlots.Contains(slot); }
+
+        // Own players are carried forward from the newest snapshot by their speed; each new snapshot corrects that
+        // guess a little. Instead of showing the correction as a jump, it goes into an offset that fades out over
+        // ~50 ms, so steady movement stays immediate and corrections blend in.
+        private readonly Vector2[] _ownLast = new Vector2[32], _ownOffset = new Vector2[32], _ownVel = new Vector2[32];
+        private readonly bool[] _ownInit = new bool[32];
+
+        private Vector2 SmoothOwn(int i, Vector2 target, Snap sa, Snap sb, bool teleported)
+        {
+            if (i >= _ownLast.Length) return target;
+            var span = sb.Time - sa.Time;
+            var vel = span > 0.0001f ? new Vector2(sb.X[i] - sa.X[i], sb.Y[i] - sa.Y[i]) / span : Vector2.zero;
+            var dt = Mathf.Clamp(Time.unscaledDeltaTime, 0f, 0.1f);
+            if (_ownInit[i] && !teleported)
+            {
+                var expected = _ownLast[i] + _ownVel[i] * dt;      // where it would be if nothing changed
+                var correction = target - expected;
+                if (correction.magnitude < 1.5f) _ownOffset[i] -= correction; // small: blend it in
+                else _ownOffset[i] = Vector2.zero;                // big (a hit, a respawn): just go there
+                _ownOffset[i] *= Mathf.Exp(-dt / 0.05f);
+            }
+            else _ownOffset[i] = Vector2.zero;
+            _ownInit[i] = true;
+            _ownLast[i] = target;
+            _ownVel[i] = vel;
+            return target + _ownOffset[i];
+        }
+
+        private void Apply(GameManager gm, Snap a, Snap b, float t, Snap la, Snap lb, float lt)
         {
             var rm = gm.replayManager;
             var replaying = (b.Flags & Proto.FReplaying) != 0;
@@ -668,10 +737,18 @@ namespace CP99Online.Net
             {
                 var ball = Match.Balls[i];
                 var tr = ball.transform;
-                var bt = a.Teleport[i] != b.Teleport[i] ? 1f : t; // teleported (bot swap): jump, don't slide
+                // other players: the buffered moment; this PC's own players: the present (not during a replay)
+                var own = Plugin.InstantOwnMovement.Value && IsLocal(i) && !replaying && i < la.X.Length && i < lb.X.Length;
+                var sa = own ? la : a;
+                var sb = own ? lb : b;
+                var st = own ? lt : t;
+                var bt = sa.Teleport[i] != sb.Teleport[i] ? 1f : st; // teleported (bot swap): jump, don't slide
                 if (b.Teleport[i] != _teleportSeen[i]) { _teleportSeen[i] = b.Teleport[i]; NetLog.Debug("Client: player " + i + " teleported (snapped)"); }
-                tr.position = new Vector3(Mathf.Lerp(a.X[i], b.X[i], bt), Mathf.Lerp(a.Y[i], b.Y[i], bt), tr.position.z);
-                tr.rotation = Quaternion.Euler(0f, 0f, Mathf.LerpAngle(a.Rot[i], b.Rot[i], bt));
+                var target = new Vector2(Mathf.LerpUnclamped(sa.X[i], sb.X[i], bt), Mathf.LerpUnclamped(sa.Y[i], sb.Y[i], bt));
+                if (own) target = SmoothOwn(i, target, sa, sb, bt == 1f && sa.Teleport[i] != sb.Teleport[i]);
+                tr.position = new Vector3(target.x, target.y, tr.position.z);
+                tr.rotation = Quaternion.Euler(0f, 0f, Mathf.LerpAngle(sa.Rot[i], sb.Rot[i], bt));
+                if (TestHarness.Active) MeasureMotion(i, own, tr.position);
 
                 var f = b.BallFlags[i];
                 ball.alive = (f & Proto.BAlive) != 0;
@@ -702,9 +779,13 @@ namespace CP99Online.Net
             }
 
             var pt = puckGo.transform;
-            var ptt = a.PuckTeleport != b.PuckTeleport ? 1f : t;
-            pt.position = new Vector3(Mathf.Lerp(a.PuckX, b.PuckX, ptt), Mathf.Lerp(a.PuckY, b.PuckY, ptt), pt.position.z);
-            pt.rotation = Quaternion.Euler(0f, 0f, Mathf.LerpAngle(a.PuckRot, b.PuckRot, ptt));
+            // a puck carried by one of this PC's players moves with them (same moment as their ball)
+            var ownPuck = Plugin.InstantOwnMovement.Value && !replaying && lb.Carrier >= 0 && IsLocal(lb.Carrier);
+            var pa = ownPuck ? la : a;
+            var pb = ownPuck ? lb : b;
+            var ptt = pa.PuckTeleport != pb.PuckTeleport ? 1f : (ownPuck ? lt : t);
+            pt.position = new Vector3(Mathf.LerpUnclamped(pa.PuckX, pb.PuckX, ptt), Mathf.LerpUnclamped(pa.PuckY, pb.PuckY, ptt), pt.position.z);
+            pt.rotation = Quaternion.Euler(0f, 0f, Mathf.LerpAngle(pa.PuckRot, pb.PuckRot, ptt));
             var carrierBall = Match.Ball(b.Carrier);
             puck.carryer = carrierBall != null ? carrierBall.gameObject : null;
             puck.disrespecting = b.Disrespect;
