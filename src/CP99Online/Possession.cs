@@ -174,19 +174,6 @@ namespace CP99Online
                 var mh = me.GetComponent<BallHandling>();
                 if (mh != null) mh.Carry(puck);
             }
-
-            var gm = Globals.gameManager;
-            if (gm != null && gm.particleManager != null && gm.particleManager.respawnParticlesPrefabs != null)
-            {
-                // a puff at both spots
-                foreach (var b in new[] { me, bot })
-                {
-                    var i = (int)b.team.teamColor;
-                    if (i < 0 || i >= gm.particleManager.respawnParticlesPrefabs.Length) continue;
-                    var fx = Object.Instantiate(gm.particleManager.respawnParticlesPrefabs[i], b.transform.position + Vector3.back / 2f, Quaternion.identity) as GameObject;
-                    Object.Destroy(fx, 2f);
-                }
-            }
         }
 
         // BallHandling turns the ball to this angle every frame, so it has to move with the swap too
