@@ -282,7 +282,7 @@ namespace UltraPuck
         public override CardTier Tier { get { return CardTier.S; } }
         public override string Id { get { return "ultrapuck.puckgun"; } }
         public override string Name { get { return "Puck Gun"; } }
-        public override string Description { get { return "Brake to fire a shot: the first player it hits gets a " + CardText.Good("1 s Stun") + ". 2 s cooldown."; } }
+        public override string Description { get { return "Brake to fire a shot: the first player it hits gets a " + CardText.Good("1 s Stun") + ". " + CardText.Neutral("2 s cooldown") + "."; } }
         public override Color Color { get { return new Color(0.80f, 0.20f, 0.25f); } }
         public override int MaxPerPlayer { get { return 1; } }
         public override void Apply(CardStats s) { s.PuckGun = true; }
@@ -293,7 +293,7 @@ namespace UltraPuck
         public override CardTier Tier { get { return CardTier.A; } }
         public override string Id { get { return "ultrapuck.invisibility"; } }
         public override string Name { get { return "Invisibility"; } }
-        public override string Description { get { return "Brake to turn " + CardText.Good("invisible for 5 s") + " to opponents. 15 s cooldown."; } }
+        public override string Description { get { return "Brake to turn " + CardText.Good("invisible for 5 s") + " to opponents. " + CardText.Neutral("15 s cooldown") + "."; } }
         public override Color Color { get { return new Color(0.55f, 0.75f, 0.95f); } }
         public override int MaxPerPlayer { get { return 1; } }
         public override bool OnByDefault { get { return false; } } // being reworked
@@ -317,7 +317,7 @@ namespace UltraPuck
         public override CardTier Tier { get { return CardTier.A; } }
         public override string Id { get { return "ultrapuck.shockwave"; } }
         public override string Name { get { return "Shockwave"; } }
-        public override string Description { get { return "Dash into an opponent to " + CardText.Good("slow") + " them and everyone near them by 30% for 2s, and push the others away. 7s cooldown."; } }
+        public override string Description { get { return "Dash into an opponent to " + CardText.Good("slow them and everyone near them by 30% for 2 s") + " and " + CardText.Good("push the others away") + ". " + CardText.Neutral("7 s cooldown") + "."; } }
         public override Color Color { get { return new Color(0.35f, 0.65f, 1.00f); } }
         public override int MaxPerPlayer { get { return 3; } }
         public override void Apply(CardStats s) { s.Shockwave++; }

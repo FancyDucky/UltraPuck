@@ -705,7 +705,7 @@ namespace CP99Online.Net
                 a = _snaps[_snaps.Count - 2];
                 var span = latest.Time - a.Time;
                 if (!extrapolate || span <= 0.0001f) { t = 1f; return; }
-                t = 1f + Mathf.Min(time - latest.Time, 0.06f) / span; // carry on at the last speed, at most 60 ms
+                t = 1f + EaseAhead(time - latest.Time) / span; // carry on at the last speed, easing off through a stall
                 return;
             }
             for (var i = _snaps.Count - 2; i >= 0; i--)
@@ -720,6 +720,18 @@ namespace CP99Online.Net
                 }
             }
             a = b = _snaps[0]; // older than everything we have
+        }
+
+        /// <summary>
+        /// How far to carry something on past the newest snapshot: fully for the first 40 ms (normal timing), then
+        /// less and less, levelling off at 140 ms. A late snapshot (the connection wobbling by 100+ ms) then looks
+        /// like a slight slowdown instead of a freeze followed by a jump.
+        /// </summary>
+        private static float EaseAhead(float x)
+        {
+            const float full = 0.04f, tail = 0.1f;
+            if (x <= full) return Mathf.Max(0f, x);
+            return full + tail * (1f - Mathf.Exp(-(x - full) / tail));
         }
 
         private static bool IsLocal(int slot) { return Match.LocalSlots.Contains(slot); }
@@ -771,6 +783,191 @@ namespace CP99Online.Net
             else _ownRot[i] = Mathf.LerpAngle(_ownRot[i], hostRot, dt * 4f);
             if (idle && Mathf.Abs(Mathf.DeltaAngle(_ownRot[i], hostRot)) > 150f) _ownRot[i] = hostRot;
             return _ownRot[i];
+        }
+
+        // ---- own-movement prediction
+        // This PC moves its own players itself, from its own sticks, with the game's movement rules (BallMovement:
+        // push = stick x speed x 0.02 against the ball's drag; BallSprint: brake; BallShove: dash), so starting,
+        // stopping, turning and dashing show the moment you do them instead of a round trip later. The host still
+        // decides: each snapshot is compared with where this PC had the player at the moment the host had seen
+        // those controls (about one ping ago), and the difference (a bump, a hit, a wall bounce, a card) is added
+        // in and blended out on screen over ~80 ms.
+        private sealed class Pred
+        {
+            public bool On;
+            public Vector2 P, V, Offset;
+            public float LastSnap = -1f, At, DashAt = -99f, Gain = 1f, FullStickFor;
+            public byte DashSeen;
+            public readonly List<Vector3> Hist = new List<Vector3>();  // x, y, present time
+            public readonly List<Vector2> HistV = new List<Vector2>();
+        }
+        private readonly Pred[] _pred = new Pred[32];
+        private static readonly bool NoPredictTest = System.Environment.GetEnvironmentVariable("CP99_TEST_PREDICT") == "0";
+        private static bool PredictOn { get { return Plugin.InstantOwnMovement.Value && !NoPredictTest; } }
+        private float _predErr, _predMax; private int _predN, _predSnaps; private float _predLogAt;
+
+        private const float DashSpeedAdd = -700f, DashSpeedDecay = 400f; // BallShove.Shove's SpeedAddition
+
+        /// <summary>How long ago (in this PC's present-time stamps) the host had seen the controls in a snapshot.</summary>
+        private float InputLag()
+        {
+            Connection c;
+            var ping = _conns.TryGetValue(0, out c) && c.Ping > 0f ? c.Ping : 0.1f;
+            return Mathf.Clamp(ping + Proto.SendRate, 0.02f, 0.4f);
+        }
+
+        private static bool HistAt(Pred p, float t, out Vector2 pos, out Vector2 vel)
+        {
+            pos = vel = Vector2.zero;
+            var h = p.Hist;
+            if (h.Count < 2 || t < h[0].z || t > h[h.Count - 1].z) return false;
+            for (var k = h.Count - 1; k > 0; k--)
+            {
+                if (h[k - 1].z > t) continue;
+                var span = h[k].z - h[k - 1].z;
+                var f = span > 0.00001f ? (t - h[k - 1].z) / span : 1f;
+                pos = Vector2.Lerp(h[k - 1], h[k], f);
+                vel = Vector2.Lerp(p.HistV[k - 1], p.HistV[k], f);
+                return true;
+            }
+            return false;
+        }
+
+        private void PredReset(Pred p, Vector2 pos, Vector2 vel)
+        {
+            p.P = pos; p.V = vel; p.Offset = Vector2.zero;
+            p.Hist.Clear(); p.HistV.Clear();
+        }
+
+        private Vector2 PredictOwn(int i, BallData ball, Snap sa, Snap sb, Vector2 hostNow, bool jumped, float rot)
+        {
+            var p = _pred[i] ?? (_pred[i] = new Pred());
+            var gm = Globals.gameManager;
+            var dt = Mathf.Clamp(Time.deltaTime, 0f, 0.1f);
+            var present = RenderTime + _renderDelay;
+            var span = sb.Time - sa.Time;
+            var hostVel = span > 0.0001f ? new Vector2(sb.X[i] - sa.X[i], sb.Y[i] - sa.Y[i]) / span : Vector2.zero;
+            var f = sb.BallFlags[i];
+            var pad = PadOf(i);
+            var stale = Now - p.At > 0.5f;
+            p.At = Now;
+            var hold = (f & Proto.BAlive) == 0 || (f & Proto.BFallen) != 0 || jumped || stale || gm == null ||
+                       gm.startCountdown > 0f || gm.pauseMenuManager != null && gm.pauseMenuManager.paused || dt <= 0f;
+            if (hold || !p.On)
+            {
+                p.On = !hold;
+                PredReset(p, hostNow, hostVel);
+                p.LastSnap = sb.Time;
+                p.DashSeen = pad.DownCount[0];
+                return hostNow;
+            }
+
+            // a new snapshot: compare with where this PC had the player when the host had seen the same controls
+            if (sb.Time != p.LastSnap)
+            {
+                p.LastSnap = sb.Time;
+                Vector2 hp, hv;
+                if (HistAt(p, sb.Time - InputLag(), out hp, out hv))
+                {
+                    var ep = new Vector2(sb.X[i], sb.Y[i]) - hp;
+                    var ev = hostVel - hv;
+                    if (TestHarness.Active) { _predErr += ep.magnitude; _predMax = Mathf.Max(_predMax, ep.magnitude); _predN++; }
+                    if (ep.magnitude > 1.5f) { PredReset(p, hostNow, hostVel); return hostNow; } // a big hit or a respawn: go there
+                    p.P += ep; p.Offset -= ep; p.V += ev;
+                    var from = sb.Time - InputLag();
+                    for (var k = 0; k < p.Hist.Count; k++)
+                    {
+                        if (p.Hist[k].z < from) continue;
+                        p.Hist[k] += new Vector3(ep.x, ep.y, 0f);
+                        p.HistV[k] += ev;
+                    }
+                }
+                _predSnaps++;
+            }
+
+            Vector2 move, aim;
+            byte held;
+            ReadSticks(i, out move, out aim, out held);
+            var carrying = sb.Carrier == i;
+            var stunned = Rounds.Stun.Remaining(ball) > 0f;
+            var rb = ball.GetComponent<Rigidbody2D>();
+            var mass = Mathf.Max(0.01f, ball.mass);
+            var drag = rb != null ? rb.drag : 0f;
+
+            // dash: one push along the facing, if a charge is ready (the host has the final say)
+            if (pad.DownCount[0] != p.DashSeen)
+            {
+                p.DashSeen = pad.DownCount[0];
+                int max; float charges;
+                if (!carrying && !stunned && ball.canShove && Time.time - p.DashAt > 0.4f &&
+                    UltraPuck.DashTracker.Get(ball, out max, out charges) && charges >= 1f)
+                {
+                    var up = (Vector2)(Quaternion.Euler(0f, 0f, rot) * Vector3.up);
+                    p.V += up * (Rounds.CardEffects.GameDashForce * Time.fixedDeltaTime / mass);
+                    p.DashAt = Time.time;
+                }
+            }
+
+            var braking = (held & Proto.HSprint) != 0 && !carrying;
+            var speed = ball.totalSpeed;
+            var since = Time.time - p.DashAt;
+            if (since < 3f) speed += Mathf.Min(0f, DashSpeedAdd + DashSpeedDecay * since);
+            if (braking) speed += DashSpeedAdd;
+            if (stunned) speed = 0f;
+            speed = Mathf.Max(0f, speed) * p.Gain;
+
+            // learn how fast this player really goes (cards, weight, Slow Poke): compare top speeds at full stick
+            // (only while the host has the player gliding freely the way the stick points: not into a wall or a crowd)
+            var free = hostVel.magnitude > 0.5f && Vector2.Dot(hostVel.normalized, move.normalized) > 0.95f;
+            if (move.magnitude > 0.95f && free && !braking && !stunned && since > 2f && drag > 0.01f && ball.totalSpeed > 1f)
+            {
+                p.FullStickFor += dt;
+                var modelTop = ball.totalSpeed * 0.02f / mass / drag;
+                var ratio = modelTop > 0.01f ? hostVel.magnitude / modelTop : 1f;
+                if (p.FullStickFor > 0.6f && ratio > 0.4f && ratio < 2.5f)
+                    p.Gain = Mathf.Clamp(Mathf.Lerp(p.Gain, ratio, dt * 2f), 0.4f, 2.5f);
+            }
+            else p.FullStickFor = 0f;
+
+            var decay = drag + (braking ? 80f * Time.fixedDeltaTime / mass : 0f);
+            p.V = (p.V + move * (speed * 0.02f / mass) * dt) / (1f + decay * dt);
+            p.P = SlideAlong(ball, p.P, ref p.V, p.V * dt);
+
+            p.Hist.Add(new Vector3(p.P.x, p.P.y, present));
+            p.HistV.Add(p.V);
+            while (p.Hist.Count > 0 && present - p.Hist[0].z > 1f) { p.Hist.RemoveAt(0); p.HistV.RemoveAt(0); }
+
+            p.Offset *= Mathf.Exp(-dt / 0.08f);
+            if (TestHarness.Active && Now > _predLogAt)
+            {
+                _predLogAt = Now + 5f;
+                if (_predN > 0) NetLog.Info("TEST own prediction vs host: off by " + (_predErr / _predN).ToString("F3") + " on average, at most " + _predMax.ToString("F2") + " (" + _predN + " checks, lag " + Mathf.RoundToInt(InputLag() * 1000f) + " ms, gain " + p.Gain.ToString("F2") + ")");
+                _predErr = _predMax = 0f; _predN = 0;
+            }
+            return p.P + p.Offset;
+        }
+
+        /// <summary>Moves a predicted player, stopping at walls (bouncing as the game would) instead of going through.</summary>
+        private static Vector2 SlideAlong(BallData ball, Vector2 from, ref Vector2 vel, Vector2 step)
+        {
+            var dist = step.magnitude;
+            var col = ball.GetComponent<CircleCollider2D>();
+            if (col == null || dist < 0.00001f) return from + step;
+            var s = ball.transform.lossyScale;
+            var r = col.radius * Mathf.Max(Mathf.Abs(s.x), Mathf.Abs(s.y));
+            var dir = step / dist;
+            foreach (var h in Physics2D.CircleCastAll(from, r, dir, dist))
+            {
+                if (h.collider == null || h.collider.isTrigger || h.collider == col) continue;
+                if (h.fraction <= 0f) continue; // already touching (after a correction): let it move out
+                var vn = Vector2.Dot(vel, h.normal);
+                if (vn >= 0f) continue;
+                var bounce = Mathf.Max(col.sharedMaterial != null ? col.sharedMaterial.bounciness : 0f,
+                                       h.collider.sharedMaterial != null ? h.collider.sharedMaterial.bounciness : 0f);
+                vel -= h.normal * vn * (1f + bounce);
+                return h.centroid + h.normal * 0.01f;
+            }
+            return from + step;
         }
 
         private Vector2 SmoothOwn(int i, Vector2 target, Snap sa, Snap sb, bool teleported)
@@ -865,10 +1062,11 @@ namespace CP99Online.Net
                 if (b.Teleport[i] != _teleportSeen[i]) { _teleportSeen[i] = b.Teleport[i]; NetLog.Debug("Client: player " + i + " teleported (snapped)"); }
                 var target = new Vector2(Mathf.LerpUnclamped(sa.X[i], sb.X[i], bt), Mathf.LerpUnclamped(sa.Y[i], sb.Y[i], bt));
                 var jumped = sa.Teleport[i] != sb.Teleport[i];
-                if (present) target = SmoothOwn(i, target, sa, sb, jumped);
-                tr.position = new Vector3(target.x, target.y, tr.position.z);
                 var rot = Mathf.LerpAngle(sa.Rot[i], sb.Rot[i], bt);
                 if (own) rot = OwnFacing(i, rot, jumped || (sb.BallFlags[i] & Proto.BAlive) == 0);
+                if (own && PredictOn) target = PredictOwn(i, ball, sa, sb, target, jumped, rot);
+                else if (present) target = SmoothOwn(i, target, sa, sb, jumped);
+                tr.position = new Vector3(target.x, target.y, tr.position.z);
                 tr.rotation = Quaternion.Euler(0f, 0f, rot);
                 if (TestHarness.Active) MeasureMotion(i, own, tr.position);
 

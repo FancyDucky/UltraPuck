@@ -181,7 +181,7 @@ namespace CP99Online.Rounds
             if (CardGame.PhaseActive)
             {
                 Fill(new Rect(0, 0, Screen.width, Screen.height), new Color(0f, 0f, 0f, 0.6f));
-                if (CardGame.Revealing) DrawReveal(u); else DrawPicking(u);
+                if (CardGame.Revealing) DrawReveal(u); else { DrawOthers(u); DrawPicking(u); }
             }
 
             var showPanel = CardGame.PhaseActive || ForcePanelTest ||
@@ -220,9 +220,12 @@ namespace CP99Online.Rounds
                 var picker = CardGame.Seats.FirstOrDefault(s => s.Offer.Length > 0);
                 var who = new GUIStyle(_title);
                 if (picker != null) who.normal.textColor = TeamColor(picker.Team);
-                Label(new Rect(0, Screen.height * 0.38f, Screen.width, 44 * u),
+                var hands = OtherHands();
+                var titleY = hands.Count > 0 ? 26 * u : Screen.height * 0.38f;
+                Label(new Rect(0, titleY, Screen.width, 44 * u),
                     picker != null ? "TEAM " + (picker.Team + 1) + " IS PICKING A CATCH-UP CARD" : "PICKING CARDS", who);
-                Label(new Rect(0, Screen.height * 0.38f + 46 * u, Screen.width, 26 * u), progress.Trim(), _sub);
+                Label(new Rect(0, titleY + 46 * u, Screen.width, 26 * u), progress.Trim() + (hands.Count > 0 ? "   (their pick is shown after everyone picks)" : string.Empty), _sub);
+                DrawHands(hands, u);
                 return;
             }
             Label(new Rect(0, 26 * u, Screen.width, 50 * u), team ? "VOTE FOR YOUR TEAM'S CATCH-UP CARD" : "PICK A CATCH-UP CARD", _title);
@@ -293,6 +296,101 @@ namespace CP99Online.Rounds
                         }
                     }
                 }
+            }
+        }
+
+        /// <summary>
+        /// Lower right while picking: the hands everyone else is choosing from (one line per hand, shared hands
+        /// list every name), with a tick once they've chosen. Which card they chose stays hidden until the reveal.
+        /// Hover a card for its text.
+        /// </summary>
+        private List<List<int>> OtherHands()
+        {
+            var groups = new List<List<int>>();
+            var mine = LocalPickers().Select(i => CardGame.Seats[i].Offer).ToList();
+            for (var i = 0; i < CardGame.Seats.Count; i++)
+            {
+                var s = CardGame.Seats[i];
+                if (CardGame.IsLocal(s) || s.Offer.Length == 0) continue;
+                if (mine.Any(o => SameHand(o, s.Offer))) continue; // a teammate voting on your hand: already shown
+                var g = groups.FirstOrDefault(x => SameHand(CardGame.Seats[x[0]].Offer, s.Offer));
+                if (g != null) g.Add(i); else groups.Add(new List<int> { i });
+            }
+            return groups;
+        }
+
+        private static string HandOwner(List<int> g)
+        {
+            var first = CardGame.Seats[g[0]];
+            var who = g.Count == 1 ? first.Name : (CardGame.TeamMode ? "Team " + (first.Team + 1) : string.Join(", ", g.Select(i => CardGame.Seats[i].Name).ToArray()));
+            if (g.All(i => CardGame.Seats[i].Choice >= 0)) return who + "  - picked";
+            return g.Count > 1 ? who + "  " + g.Count(i => CardGame.Seats[i].Choice >= 0) + "/" + g.Count : who;
+        }
+
+        private void DrawOthers(float u)
+        {
+            if (LocalPickers().Count == 0) return; // nobody here is picking: their hands are shown full size instead
+            var groups = OtherHands();
+            if (groups.Count == 0) return;
+
+            var lineH = 24 * u;
+            var nameW = 150 * u;
+            var w = Screen.width * 0.5f - 30 * u;
+            var h = 30 * u + groups.Count * (lineH + 4 * u);
+            var box = new Rect(Screen.width - w - 10 * u, Screen.height - h - 10 * u, w, h);
+            Fill(box, new Color(0f, 0f, 0f, 0.75f));
+            Label(new Rect(box.x + 8 * u, box.y + 4 * u, w, 22 * u), CardGame.TeamMode ? "OTHER TEAMS ARE VOTING ON" : "OTHERS ARE CHOOSING FROM", _small);
+            var mouse = Event.current.mousePosition;
+            var y = box.y + 28 * u;
+            foreach (var g in groups)
+            {
+                var first = CardGame.Seats[g[0]];
+                var name = new GUIStyle(_small);
+                name.normal.textColor = TeamColor(first.Team);
+                Label(new Rect(box.x + 8 * u, y, nameW, lineH), HandOwner(g), name);
+                var x = box.x + 8 * u + nameW;
+                foreach (var id in first.Offer)
+                {
+                    var text = CardName(id);
+                    var size = _chip.CalcSize(new GUIContent(text));
+                    var chip = new Rect(x, y + 1 * u, size.x + 12 * u, lineH - 2 * u);
+                    if (chip.xMax > box.xMax - 6 * u) { Label(new Rect(x, y, 30 * u, lineH), "...", _small); break; }
+                    var c = CardColor(id);
+                    var hover = chip.Contains(mouse);
+                    Fill(chip, new Color(c.r * 0.55f, c.g * 0.55f, c.b * 0.55f, hover ? 1f : 0.9f));
+                    var tier = CardTier(id);
+                    if (hover) Outline(chip, Color.white, Mathf.Max(1f, u));
+                    else if (tier != UltraPuck.CardTier.None) Outline(chip, TierColor(tier), Mathf.Max(1f, u));
+                    Label(chip, text, _chip);
+                    if (hover) { _tipTitle = text; _tipBody = CardText(id); }
+                    x = chip.xMax + 5 * u;
+                }
+                y += lineH + 4 * u;
+            }
+        }
+
+        /// <summary>Nobody on this PC is picking: the hands the others are choosing from, full size (no clicks).</summary>
+        private void DrawHands(List<List<int>> hands, float u)
+        {
+            if (hands.Count == 0) return;
+            var top = 112 * u;
+            var rowH = Screen.height * 0.70f / hands.Count;
+            var cardH = Mathf.Min(320 * u, rowH - 36 * u);
+            var cardW = cardH * CardRatio;
+            var gap = 18 * u;
+            for (var r = 0; r < hands.Count; r++)
+            {
+                var g = hands[r];
+                var first = CardGame.Seats[g[0]];
+                var offer = first.Offer;
+                var y = top + r * rowH;
+                var nameStyle = new GUIStyle(_sub) { alignment = TextAnchor.MiddleCenter };
+                nameStyle.normal.textColor = TeamColor(first.Team);
+                Label(new Rect(0, y, Screen.width, 26 * u), HandOwner(g) + (g.All(i => CardGame.Seats[i].Choice >= 0) ? string.Empty : "  - choosing"), nameStyle);
+                var total = offer.Length * cardW + (offer.Length - 1) * gap;
+                var x0 = (Screen.width - total) / 2f;
+                for (var k = 0; k < offer.Length; k++)
+                    DrawCard(new Rect(x0 + k * (cardW + gap), y + 30 * u, cardW, cardH), offer[k], false, false, false, null, u);
             }
         }
 
