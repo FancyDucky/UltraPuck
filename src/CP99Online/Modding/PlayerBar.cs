@@ -21,6 +21,9 @@ namespace UltraPuck
 
         internal void Destroy() { if (_root != null) Object.Destroy(_root); }
 
+        /// <summary>Drawn right now (including while it fades out).</summary>
+        internal bool Shown { get { return _root != null && _root.activeSelf; } }
+
         /// <param name="value">How full: 0..segments (e.g. 1.4 of 2 dash charges).</param>
         /// <param name="offsetY">Height above (+) or below (-) the player's centre.</param>
         /// <param name="always">Stay visible when full (otherwise fade out after the "ready" pulse).</param>
@@ -144,7 +147,26 @@ namespace UltraPuck
         private readonly string _name;
         private readonly Dictionary<BallData, PlayerBar> _bars = new Dictionary<BallData, PlayerBar>();
 
-        internal PlayerBars(string name) { _name = name; }
+        private static readonly Dictionary<string, PlayerBars> _byName = new Dictionary<string, PlayerBars>();
+
+        internal PlayerBars(string name) { _name = name; _byName[name] = this; }
+
+        /// <summary>Whether the <paramref name="name"/> bar is showing for this player.</summary>
+        internal static bool Showing(string name, BallData b)
+        {
+            PlayerBars bars;
+            PlayerBar bar;
+            return b != null && _byName.TryGetValue(name, out bars) && bars._bars.TryGetValue(b, out bar) && bar.Shown;
+        }
+
+        /// <summary>Bars under the player stack downward: the first one at -0.5, then one row lower for each of
+        /// <paramref name="above"/> that is showing for this player.</summary>
+        internal static float BelowY(BallData b, params string[] above)
+        {
+            var y = -0.5f;
+            foreach (var n in above) if (Showing(n, b)) y -= 0.14f;
+            return y;
+        }
 
         internal PlayerBar For(BallData b)
         {

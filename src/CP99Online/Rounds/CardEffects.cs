@@ -339,39 +339,6 @@ namespace CP99Online.Rounds
         {
             foreach (var d in _dash.Values)
                 if (d.Charges < d.Max) d.Charges = Mathf.Min(d.Max, d.Charges + dt / d.Cooldown);
-            PuckMagnet();
-        }
-
-        private static GameObject _lastCarrier;
-        private static float _puckFreeSince = -1f;
-
-        /// <summary>Puck Magnet: grab a loose puck from further away (the game only picks it up on contact).</summary>
-        private static void PuckMagnet()
-        {
-            var gm = Globals.gameManager;
-            if (gm == null || gm.puck == null || gm.roundOver || gm.replayManager.replaying || gm.startCountdown > 0f) return;
-            var puck = gm.puck.GetComponent<Puck>();
-            if (puck == null) return;
-            var now = Time.time;
-            if (puck.carryer != null) { _lastCarrier = puck.carryer; _puckFreeSince = -1f; return; }
-            if (_puckFreeSince < 0f) _puckFreeSince = now;
-            foreach (var kv in _applied)
-            {
-                var b = kv.Key;
-                if (b == null || kv.Value.Stats.PickupRange <= 1.001f) continue;
-                if (b.gameObject == _lastCarrier && now - _puckFreeSince < 0.6f) continue; // don't re-grab your own shot
-                if (!b.alive || b.fallen || !b.canCarry || b.carryObject != null) continue;
-                var h = b.GetComponent<BallHandling>();
-                if (h == null || h.canCarryTimer > 0f) continue;
-                var touch = Radius(b.GetComponent<Collider2D>()) + Radius(gm.puck.GetComponent<Collider2D>());
-                var dist = Vector2.Distance(b.transform.position, gm.puck.transform.position);
-                if (dist > touch * kv.Value.Stats.PickupRange) continue;
-                h.Carry(gm.puck);
-                Net.NetLog.Debug("Puck Magnet: " + b.name + " grabbed the puck from " + dist.ToString("F2") + " (touch " + touch.ToString("F2") + ")");
-                var v = b.GetComponent<BallVibrator>();
-                if (v != null) v.presetVibrate(rumblePreset.PickUp);
-                return;
-            }
         }
 
         internal static float Radius(Collider2D c)
@@ -497,7 +464,6 @@ namespace CP99Online.Rounds
             if (!Same(st.DashCooldown, 1f))
                 lines.Add(CardText.Stat(1f / Mathf.Clamp(st.DashCooldown, 0.1f, 5f), "Dash Recharge Speed", true) +
                     "  (" + (GameDashCooldown * Mathf.Clamp(st.DashCooldown, 0.1f, 5f)).ToString("0.0") + " s per charge, normally 2.0 s)");
-            if (!Same(st.PickupRange, 1f)) lines.Add(CardText.Stat(st.PickupRange, "Pick-up Range", true));
             if (st.SpawnCloser > 0f) lines.Add(CardText.Stat(1f - Mathf.Clamp(st.SpawnCloser, 0f, 0.6f), "Face-off Distance", false));
             if (st.HeadStart > 0) lines.Add(CardText.Good("Head Start x" + st.HeadStart) + "  (the team with the most starts face-offs with the puck)");
             if (st.OpponentSpeed < 0.999f) lines.Add(CardText.Stat(st.OpponentSpeed, "Opponent Move Speed", false));
@@ -521,7 +487,6 @@ namespace CP99Online.Rounds
             return "speedFactor=" + (a != null ? a.SpeedFactor.ToString("F2") : "1") + " strength=" + b.strength.ToString("F1") +
                 " mass=" + b.mass.ToString("F2") + " scale=" + b.transform.localScale.x.ToString("F2") +
                 (d != null ? " dashes=" + d.Max + " cooldown=" + d.Cooldown.ToString("F2") : string.Empty) +
-                (a != null && a.Stats.PickupRange > 1.001f ? " pickup=x" + a.Stats.PickupRange.ToString("F1") : string.Empty) +
                 (a != null && a.Stats.SpawnCloser > 0f ? " spawnCloser=" + a.Stats.SpawnCloser.ToString("F2") : string.Empty) +
                 (a != null && a.Stats.PuckGun ? " puckGun" : string.Empty);
         }

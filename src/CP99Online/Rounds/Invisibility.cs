@@ -267,7 +267,7 @@ namespace CP99Online.Rounds
                     seen.Add(b);
                     if (left > 0f) _active.Add(b);
                     var visible = b.alive && !b.fallen && !gm.replayManager.replaying;
-                    var y = Stun.Remaining(b) > 0f ? -0.64f : -0.5f; // below the stun bar if both show
+                    var y = UltraPuck.PlayerBars.BelowY(b, "StunBar"); // below the stun bar if both show
                     _bars.For(b).Set(b, 1, 1f - left, visible, false, Filling, Ready, y, 0.78f, 0.09f);
                 }
             _bars.Prune(seen);

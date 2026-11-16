@@ -14,7 +14,7 @@ namespace CP99Online
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "cp99.online";
-        public const string Version = "0.10.8";
+        public const string Version = "0.10.9";
 
         internal static ManualLogSource Logger_;
         internal static ConfigEntry<bool> NoBoostSlowdown;
@@ -28,6 +28,7 @@ namespace CP99Online
         internal static ConfigEntry<string> LastAddress;
         internal static ConfigEntry<ControllerChoice> OnlineController;
         internal static ConfigEntry<bool> InstantOwnMovement;
+        internal static ConfigEntry<bool> LiveOpponents;
         internal static ConfigEntry<bool> DeckDefaultsApplied;
         internal static ConfigEntry<bool> AutoUpdate;
         internal static string DllPath;
@@ -58,6 +59,8 @@ namespace CP99Online
                 "What you play with when you join someone else's game.");
             InstantOwnMovement = Config.Bind("Online", "InstantOwnMovement", true,
                 "When you join someone's game, draw your own player at the newest position from the host (about 50 ms sooner) instead of in step with everyone else.");
+            LiveOpponents = Config.Bind("Online", "LiveOpponents", true,
+                "When you join someone's game (with Instant Own Movement on), draw the other players and a loose puck at the same moment as your own player, guessed ahead from their speed, so dashes and checks connect where they look like they do. Off: they're drawn a little in the past (smoother, but behind).");
             SkipIntro = Config.Bind("General", "SkipIntro", true,
                 "Start straight at the main menu: no logo, no \"Press A to Begin\" title screen and no language picker (turn off to change the language).");
             OpenMenuOnStart = Config.Bind("Debug", "OpenMenuOnStart", false,

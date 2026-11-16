@@ -139,6 +139,7 @@ namespace CP99Online
                         items.Add(Item.Action(() => "Go to Player Select", () => s.ClientGoToPlayerSelect()));
                     items.Add(Item.Action(() => "Leave Game", () => s.Stop("You left")));
                     items.Add(InstantMovementItem());
+                    items.Add(LiveOpponentsItem());
                     items.Add(Item.Info(() => s.Welcomed
                         ? "In " + (string.IsNullOrEmpty(s.HostName) ? "the host" : s.HostName) + "'s game. Everyone meets at player select."
                         : s.Status));
@@ -155,6 +156,13 @@ namespace CP99Online
         {
             return Item.Action(() => "Instant Own Movement: " + (Plugin.InstantOwnMovement.Value ? "On" : "Off"),
                 () => Plugin.InstantOwnMovement.Value = !Plugin.InstantOwnMovement.Value);
+        }
+
+        /// <summary>Joining: draw everyone else at the same moment as you (on) or a little in the past (off).</summary>
+        private static Item LiveOpponentsItem()
+        {
+            return Item.Action(() => "Live Opponents: " + (Plugin.LiveOpponents.Value ? "On" : "Off"),
+                () => Plugin.LiveOpponents.Value = !Plugin.LiveOpponents.Value);
         }
 
         private static string LobbyKey()

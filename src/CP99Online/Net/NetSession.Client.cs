@@ -107,8 +107,35 @@ namespace CP99Online.Net
         private readonly Vector3[] _mPrev = new Vector3[32], _mStep = new Vector3[32];
         private float _mOwn, _mOther; private int _mOwnN, _mOtherN;
 
+        // Tests: how far from the truth other players are drawn, at the moment your own player is shown (the host's
+        // present). Each frame remembers where they were drawn; once snapshots for that moment arrive, compare.
+        private struct Drawn { public float T; public int I; public Vector2 P; }
+        private readonly List<Drawn> _drawn = new List<Drawn>();
+        private float _truthErr, _truthMax; private int _truthN;
+
+        private void MeasureTruth(int i, Vector3 pos)
+        {
+            _drawn.Add(new Drawn { T = RenderTime + _renderDelay, I = i, P = pos });
+            var latest = _snaps[_snaps.Count - 1].Time;
+            var k = 0;
+            for (; k < _drawn.Count && _drawn[k].T <= latest; k++)
+            {
+                Snap a, b; float t;
+                Find(_drawn[k].T, false, out a, out b, out t);
+                var d = _drawn[k];
+                if (d.I >= a.X.Length || d.I >= b.X.Length || a.Teleport[d.I] != b.Teleport[d.I]) continue;
+                var truth = new Vector2(Mathf.Lerp(a.X[d.I], b.X[d.I], t), Mathf.Lerp(a.Y[d.I], b.Y[d.I], t));
+                var e = Vector2.Distance(truth, d.P);
+                if (e > 3f) continue; // a respawn
+                _truthErr += e; _truthN++; if (e > _truthMax) _truthMax = e;
+            }
+            if (k > 0) _drawn.RemoveRange(0, k);
+            if (_drawn.Count > 4000) _drawn.Clear();
+        }
+
         private void MeasureMotion(int i, bool own, Vector3 pos)
         {
+            if (!IsLocal(i) && _snaps.Count > 0) MeasureTruth(i, pos);
             if (i >= _mPrev.Length) return;
             var step = pos - _mPrev[i];
             if (_mPrev[i] != Vector3.zero && step.magnitude < 2f)
@@ -136,6 +163,8 @@ namespace CP99Online.Net
                 NetLog.Info("TEST smoothness: clock stutter per frame old " + (_smErrOld / _smFrames * 1000f).ToString("F2") + " ms, new " +
                     (_smErrNew / _smFrames * 1000f).ToString("F2") + " ms; drawing " + Mathf.RoundToInt(_renderDelay * 1000f) + " ms behind (old: 100 ms); " +
                     "motion unevenness own " + (_mOwnN > 0 ? (_mOwn / _mOwnN * 1000f).ToString("F1") : "-") + ", others " + (_mOtherN > 0 ? (_mOther / _mOtherN * 1000f).ToString("F1") : "-") + " (mm per frame)");
+                if (_truthN > 0) NetLog.Info("TEST opponents vs the host's present: off by " + (_truthErr / _truthN).ToString("F2") + " on average, at most " + _truthMax.ToString("F2") + " (units; a player is ~0.8 across)" + (LiveOpponentsOn ? " [live]" : " [buffered]"));
+                _truthErr = _truthMax = 0f; _truthN = 0;
                 _mOwn = _mOther = 0f; _mOwnN = _mOtherN = 0;
                 _smErrOld = _smErrNew = 0f; _smFrames = 0;
             }
@@ -749,6 +778,17 @@ namespace CP99Online.Net
             if (i >= _ownLast.Length) return target;
             var span = sb.Time - sa.Time;
             var vel = span > 0.0001f ? new Vector2(sb.X[i] - sa.X[i], sb.Y[i] - sa.Y[i]) / span : Vector2.zero;
+            return Smooth(i, target, vel, teleported);
+        }
+
+        private static readonly bool NoLiveTest = System.Environment.GetEnvironmentVariable("CP99_TEST_LIVE") == "0"; // tests: compare with it off
+        private static bool LiveOpponentsOn { get { return Plugin.LiveOpponents.Value && !NoLiveTest; } }
+
+        private const int PuckSmoothSlot = 31; // the loose puck's slot in the smoothing arrays
+
+        /// <summary>Something drawn at the present (guessed from its last speed): blend each new correction in.</summary>
+        private Vector2 Smooth(int i, Vector2 target, Vector2 vel, bool teleported)
+        {
             var dt = Mathf.Clamp(Time.unscaledDeltaTime, 0f, 0.1f);
             if (_ownInit[i] && !teleported)
             {
@@ -763,6 +803,18 @@ namespace CP99Online.Net
             _ownLast[i] = target;
             _ownVel[i] = vel;
             return target + _ownOffset[i];
+        }
+
+        private static Vector2 NotThroughWalls(Vector2 from, Vector2 to)
+        {
+            var hits = Physics2D.LinecastAll(from, to);
+            foreach (var h in hits) // nearest first; players and the puck have no colliders on clients
+            {
+                if (h.collider == null || h.collider.isTrigger) continue;
+                var back = (to - from).normalized * 0.05f;
+                return h.point - back;
+            }
+            return to;
         }
 
         private void Apply(GameManager gm, Snap a, Snap b, float t, Snap la, Snap lb, float lt)
@@ -800,16 +852,20 @@ namespace CP99Online.Net
             {
                 var ball = Match.Balls[i];
                 var tr = ball.transform;
-                // other players: the buffered moment; this PC's own players: the present (not during a replay)
-                var own = Plugin.InstantOwnMovement.Value && IsLocal(i) && !replaying && i < la.X.Length && i < lb.X.Length;
-                var sa = own ? la : a;
-                var sb = own ? lb : b;
-                var st = own ? lt : t;
+                // This PC's own players are drawn at the present (the host's newest positions, carried on by their
+                // speed). With Live Opponents everyone else is too, so the whole rink is shown at one moment and a dash
+                // that looks like it hits, hits. Otherwise others are drawn a little in the past (smoother, but behind).
+                var mine = IsLocal(i);
+                var present = Plugin.InstantOwnMovement.Value && (mine || LiveOpponentsOn) && !replaying && i < la.X.Length && i < lb.X.Length;
+                var own = present && mine;
+                var sa = present ? la : a;
+                var sb = present ? lb : b;
+                var st = present ? lt : t;
                 var bt = sa.Teleport[i] != sb.Teleport[i] ? 1f : st; // teleported (bot swap): jump, don't slide
                 if (b.Teleport[i] != _teleportSeen[i]) { _teleportSeen[i] = b.Teleport[i]; NetLog.Debug("Client: player " + i + " teleported (snapped)"); }
                 var target = new Vector2(Mathf.LerpUnclamped(sa.X[i], sb.X[i], bt), Mathf.LerpUnclamped(sa.Y[i], sb.Y[i], bt));
                 var jumped = sa.Teleport[i] != sb.Teleport[i];
-                if (own) target = SmoothOwn(i, target, sa, sb, jumped);
+                if (present) target = SmoothOwn(i, target, sa, sb, jumped);
                 tr.position = new Vector3(target.x, target.y, tr.position.z);
                 var rot = Mathf.LerpAngle(sa.Rot[i], sb.Rot[i], bt);
                 if (own) rot = OwnFacing(i, rot, jumped || (sb.BallFlags[i] & Proto.BAlive) == 0);
@@ -845,12 +901,25 @@ namespace CP99Online.Net
             }
 
             var pt = puckGo.transform;
-            // a puck carried by one of this PC's players moves with them (same moment as their ball)
-            var ownPuck = Plugin.InstantOwnMovement.Value && !replaying && lb.Carrier >= 0 && IsLocal(lb.Carrier);
+            // the puck is shown at the same moment as the players around it: the present when it's carried by one of
+            // this PC's players, or with Live Opponents always
+            var ownPuck = Plugin.InstantOwnMovement.Value && !replaying && (LiveOpponentsOn || lb.Carrier >= 0 && IsLocal(lb.Carrier));
             var pa = ownPuck ? la : a;
             var pb = ownPuck ? lb : b;
-            var ptt = pa.PuckTeleport != pb.PuckTeleport ? 1f : (ownPuck ? lt : t);
-            pt.position = new Vector3(Mathf.LerpUnclamped(pa.PuckX, pb.PuckX, ptt), Mathf.LerpUnclamped(pa.PuckY, pb.PuckY, ptt), pt.position.z);
+            var puckJumped = pa.PuckTeleport != pb.PuckTeleport;
+            var ptt = puckJumped ? 1f : (ownPuck ? lt : t);
+            var puckAt = new Vector2(Mathf.LerpUnclamped(pa.PuckX, pb.PuckX, ptt), Mathf.LerpUnclamped(pa.PuckY, pb.PuckY, ptt));
+            if (ownPuck && pb.Carrier < 0)
+            {
+                // a loose puck guessed ahead: never through a wall (it would have bounced; the next snapshot shows how)
+                var from = new Vector2(pb.PuckX, pb.PuckY);
+                if (ptt > 1f) puckAt = NotThroughWalls(from, puckAt);
+                var span = pb.Time - pa.Time;
+                var vel = span > 0.0001f ? new Vector2(pb.PuckX - pa.PuckX, pb.PuckY - pa.PuckY) / span : Vector2.zero;
+                puckAt = Smooth(PuckSmoothSlot, puckAt, vel, puckJumped || pa.Carrier != pb.Carrier);
+            }
+            else _ownInit[PuckSmoothSlot] = false;
+            pt.position = new Vector3(puckAt.x, puckAt.y, pt.position.z);
             pt.rotation = Quaternion.Euler(0f, 0f, Mathf.LerpAngle(pa.PuckRot, pb.PuckRot, ptt));
             // A carried puck sits 1 unit in front of its carrier (BallHandling.FixedUpdate). Put it there from the
             // carrier as drawn, rather than guessing its path: while spinning it circles the player, and carrying a

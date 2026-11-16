@@ -7,8 +7,8 @@ namespace CP99Online.Rounds
     /// Card visuals drawn on every PC:
     /// - Shockwave: a ring that bursts out from the player who was hit (the host sends it to clients).
     /// - Friendly Fire: the team-coloured respawn sparkles keep coming off a player while their speed boost lasts.
-    /// - Shockwave ready: a yellow dot in the middle of the player while their Shockwave can go off.
-    /// - Puck Magnet: a faint circle around the player showing how far away they grab a loose puck.
+    /// - Shockwave cooldown: an orange bar under the player while their Shockwave recharges (stacked under any
+    ///   stun / Invisibility / Puck Gun bar so they never overlap).
     /// </summary>
     internal sealed class CardFx : MonoBehaviour
     {
@@ -56,25 +56,23 @@ namespace CP99Online.Rounds
         internal static void Clear()
         {
             _slowRings.Clear();
-            ClearDots();
+            _shock.Clear();
+            _shockBars.Clear();
             _boost.Clear();
-            foreach (var r in _rings.Values) if (r != null) Destroy(r.gameObject);
-            _rings.Clear();
         }
 
-        private void OnLevelWasLoaded(int level) { _slowRings.Clear(); _boost.Clear(); _rings.Clear(); _dots.Clear(); _readyAt.Clear(); _shockHolders.Clear(); _holdersAt = 0f; _magnetAt = 0f; }
+        private void OnLevelWasLoaded(int level) { _slowRings.Clear(); _boost.Clear(); _shock.Clear(); _shockBars.Clear(); }
 
-        private static float _shotAt = -1f, _shotAt2 = -1f, _shotAt3 = -1f;
+        private static float _shotAt = -1f, _shotAt2 = -1f;
         private static int _shots;
+
+        private void LateUpdate() { ShockBars(); } // after the stun / Invisibility bars have placed themselves
 
         private void Update()
         {
             if (_shotAt > 0f && Time.unscaledTime >= _shotAt) { _shotAt = -1f; TestHarness.Shot("fx_event_" + (++_shots) + "_" + (Net.NetSession.ClientInMatch ? "client" : "host")); }
             if (_shotAt2 > 0f && Time.unscaledTime >= _shotAt2) { _shotAt2 = -1f; TestHarness.Shot("fx_cooldown_" + (Net.NetSession.ClientInMatch ? "client" : "host")); }
-            if (_shotAt3 > 0f && Time.unscaledTime >= _shotAt3) { _shotAt3 = -1f; TestHarness.Shot("fx_ready_" + (Net.NetSession.ClientInMatch ? "client" : "host")); }
             Boosts();
-            Magnets();
-            Dots();
             Slows();
         }
 
@@ -120,81 +118,46 @@ namespace CP99Online.Rounds
             foreach (var b in _done) _slowRings.Remove(b);
         }
 
-        // ------------------------------------------------------------------ Shockwave ready dot
-        // Players with Shockwave get a yellow dot in the middle of their ball while it's ready; it goes away for the cooldown.
+        // ------------------------------------------------------------------ Shockwave cooldown bar
+        // An orange bar under the player that fills up while their Shockwave recharges, pulses when it's ready, then
+        // fades. It goes under the stun bar and the Invisibility / Puck Gun bar when those are showing.
 
-        private static readonly Dictionary<BallData, float> _readyAt = new Dictionary<BallData, float>(); // every PC: when the cooldown ends
-        private static readonly Dictionary<BallData, LineRenderer> _dots = new Dictionary<BallData, LineRenderer>();
-        private static readonly HashSet<BallData> _shockHolders = new HashSet<BallData>();
-        private static float _holdersAt;
-        private static readonly Color DotColor = new Color(1f, 0.85f, 0.15f);
-        private static Material _dotMat;
+        private sealed class ShockCooldown { public float Start, Length; }
+        private static readonly Dictionary<BallData, ShockCooldown> _shock = new Dictionary<BallData, ShockCooldown>(); // every PC
+        private static readonly UltraPuck.PlayerBars _shockBars = new UltraPuck.PlayerBars("ShockwaveBar");
+        private static readonly Color ShockFilling = new Color(1f, 0.55f, 0.15f, 0.9f);
+        private static readonly Color ShockReady = new Color(1f, 0.7f, 0.3f, 1f);
 
         /// <summary>Every PC: this ball's Shockwave went off and is recharging for <paramref name="seconds"/>.</summary>
         internal static void ShockwaveCooldown(BallData b, float seconds)
         {
             if (b == null || seconds <= 0f) return;
-            _readyAt[b] = Time.time + seconds;
+            _shock[b] = new ShockCooldown { Start = Time.time, Length = seconds };
             if (TestHarness.FxShots) _shotAt2 = Time.unscaledTime + 2.5f;
         }
 
-        private static void ClearDots()
-        {
-            foreach (var d in _dots.Values) if (d != null) Destroy(d.gameObject);
-            _dots.Clear();
-            _readyAt.Clear();
-            _shockHolders.Clear();
-            _holdersAt = 0f;
-        }
+        private static readonly HashSet<BallData> _shockSeen = new HashSet<BallData>();
 
-        private static void Dots()
+        private static void ShockBars()
         {
-            if (Time.unscaledTime >= _holdersAt)
-            {
-                _holdersAt = Time.unscaledTime + 0.5f;
-                _shockHolders.Clear();
-                foreach (var s in CardGame.Seats)
-                    if (s.Ball != null && CardEffects.StatsOf(s).Shockwave > 0) _shockHolders.Add(s.Ball);
-                _done.Clear();
-                foreach (var kv in _dots) if (kv.Key == null || !_shockHolders.Contains(kv.Key)) _done.Add(kv.Key);
-                foreach (var b in _done) { var d = _dots[b]; if (d != null) Destroy(d.gameObject); _dots.Remove(b); }
-            }
-            if (_shockHolders.Count == 0) return;
+            if (_shock.Count == 0 && _shockBars.Count == 0) return;
             var gm = Globals.gameManager;
-            var hide = gm == null || gm.replayManager != null && gm.replayManager.replaying || CardGame.PhaseActive;
-            foreach (var b in _shockHolders)
+            if (gm == null || gm.teams == null) { _shock.Clear(); _shockBars.Clear(); return; }
+            var hide = gm.replayManager != null && gm.replayManager.replaying || CardGame.PhaseActive;
+            _shockSeen.Clear();
+            _done.Clear();
+            foreach (var kv in _shock)
             {
-                if (b == null) continue;
-                LineRenderer dot;
-                if (!_dots.TryGetValue(b, out dot) || dot == null)
-                {
-                    dot = MakeCircle("UltraPuck_ShockwaveReady");
-                    if (_dotMat == null) { _dotMat = new Material(LineMat()) { renderQueue = 3500 }; } // drawn after the ball's symbol
-                    dot.material = _dotMat;
-                    dot.SetColors(DotColor, DotColor);
-                    _dots[b] = dot;
-                    if (TestHarness.FxShots) _shotAt3 = Time.unscaledTime + 3f;
-                }
-                float ready;
-                var cooling = _readyAt.TryGetValue(b, out ready) && Time.time < ready;
-                var show = !hide && !cooling && b.alive && !b.fallen && !Invisibility.IsInvisible(b);
-                dot.enabled = show;
-                if (!show) continue;
-                // a filled disc: a ring as wide as its radius, on top of the ball (towards the camera)
-                var R = CardEffects.Radius(b.GetComponent<Collider2D>());
-                var r = R * 0.16f;
-                var p = b.transform.position;
-                // on the top of the ball's model (the face the camera sees), nudged toward the camera
-                var cam = Camera.main;
-                var top = new Vector3(p.x, p.y, p.z - R);
-                var mesh = b.ballMesh != null ? b.ballMesh.GetComponentInChildren<Renderer>() : null;
-                if (mesh != null) { var bb = mesh.bounds; top = new Vector3(bb.center.x, bb.center.y, bb.min.z); }
-                var toCam = cam != null ? (cam.transform.position - top).normalized : Vector3.back;
-                dot.transform.position = top + toCam * 0.12f; // in front of the symbol painted on the ball
-                if (cam != null) dot.transform.rotation = Quaternion.LookRotation(-toCam, Vector3.up);
-                dot.transform.localScale = new Vector3(r, r, 1f);
-                dot.SetWidth(2f * r, 2f * r); // world units: the ring covers 0..2r, a solid dot of radius 2r
+                var b = kv.Key;
+                var t = Time.time - kv.Value.Start;
+                if (b == null || t > kv.Value.Length + 1.5f) { _done.Add(b); continue; } // ready and faded out
+                _shockSeen.Add(b);
+                var visible = !hide && b.alive && !b.fallen;
+                var y = UltraPuck.PlayerBars.BelowY(b, "StunBar", "InvisibilityBar");
+                _shockBars.For(b).Set(b, 1, Mathf.Clamp01(t / kv.Value.Length), visible, false, ShockFilling, ShockReady, y, 0.78f, 0.09f);
             }
+            foreach (var b in _done) _shock.Remove(b);
+            _shockBars.Prune(_shockSeen);
         }
 
         // ------------------------------------------------------------------ Shockwave
@@ -299,59 +262,6 @@ namespace CP99Online.Rounds
                 Destroy(fx, 2f);
             }
             foreach (var b in _done) _boost.Remove(b);
-        }
-
-        // ------------------------------------------------------------------ Puck Magnet
-
-        private static readonly Dictionary<BallData, LineRenderer> _rings = new Dictionary<BallData, LineRenderer>();
-        private static readonly Dictionary<BallData, float> _range = new Dictionary<BallData, float>();
-        private static float _magnetAt;
-
-        private static void Magnets()
-        {
-            var gm = Globals.gameManager;
-            if (Time.unscaledTime >= _magnetAt)
-            {
-                _magnetAt = Time.unscaledTime + 0.5f;
-                _range.Clear();
-                foreach (var s in CardGame.Seats)
-                {
-                    if (s.Ball == null) continue;
-                    var st = CardEffects.StatsOf(s);
-                    if (st.PickupRange > 1.001f) _range[s.Ball] = st.PickupRange;
-                }
-                _done.Clear();
-                foreach (var kv in _rings) if (kv.Key == null || !_range.ContainsKey(kv.Key)) _done.Add(kv.Key);
-                foreach (var b in _done) { var lr = _rings[b]; if (lr != null) Destroy(lr.gameObject); _rings.Remove(b); }
-            }
-            if (_range.Count == 0 || gm == null || gm.puck == null) return;
-
-            var puckR = CardEffects.Radius(gm.puck.GetComponent<Collider2D>());
-            var hide = gm.replayManager != null && gm.replayManager.replaying || CardGame.PhaseActive;
-            foreach (var kv in _range)
-            {
-                var b = kv.Key;
-                if (b == null) continue;
-                LineRenderer lr;
-                if (!_rings.TryGetValue(b, out lr) || lr == null)
-                {
-                    lr = MakeCircle("UltraPuck_MagnetRange");
-                    var c = b.team != null ? TeamColor(gm.teams.IndexOf(b.team)) : Color.white;
-                    var col = new Color(c.r, c.g, c.b, 0.55f);
-                    lr.SetColors(col, col);
-                    _rings[b] = lr;
-                }
-                var show = !hide && b.alive && !b.fallen && b.carryObject == null && !Invisibility.IsInvisible(b);
-                lr.enabled = show;
-                if (!show) continue;
-                // exactly where Puck Magnet grabs: the puck is grabbed once its centre is within (player + puck radius)
-                // x range of the player's centre, i.e. as soon as the puck's edge reaches this ring
-                var r = (CardEffects.Radius(b.GetComponent<Collider2D>()) + puckR) * kv.Value - puckR;
-                var p = b.transform.position;
-                lr.transform.position = new Vector3(p.x, p.y, p.z + 0.2f); // just under the ball
-                lr.transform.localScale = new Vector3(r, r, 1f);
-                lr.SetWidth(0.06f, 0.06f); // a thin line, in world units
-            }
         }
     }
 }

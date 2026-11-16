@@ -44,8 +44,6 @@ namespace UltraPuck
         public float SpawnCloser;
         /// <summary>Head Start copies: at every face-off, the team with the most starts with the puck (a tie: nobody).</summary>
         public int HeadStart;
-        /// <summary>Puck pick-up distance multiplier (1.5 = grab it from 50% further).</summary>
-        public float PickupRange = 1f;
         /// <summary>Pylons (a solid dummy player) placed in front of your team's net.</summary>
         public int Pylons;
         /// <summary>Braking fires a shot (2 s cooldown) that stuns the first player it hits (teammates too) for 1 s and
@@ -114,7 +112,7 @@ namespace UltraPuck
             new DoubleDashCard(), new SpeedUpCard(), new PowerShotCard(),
             new QuickRechargeCard(), new HeavyweightCard(), new FeatherweightCard(),
             new OverChargeCard(), new SlowPokeCard(), new HeadStartCard(),
-            new PylonGoalieCard(), new PuckMagnetCard(), new PuckGunCard(),
+            new PylonGoalieCard(), new PuckGunCard(),
             new FriendlyFireCard(), new InvisibilityCard(), new ShockwaveCard(),
         };
 
@@ -277,17 +275,6 @@ namespace UltraPuck
         public override Color Color { get { return new Color(0.70f, 0.72f, 0.76f); } }
         public override int MaxPerPlayer { get { return 2; } }
         public override void Apply(CardStats s) { s.Pylons++; }
-    }
-
-    internal sealed class PuckMagnetCard : UltraCard
-    {
-        public override CardTier Tier { get { return CardTier.A; } }
-        public override string Id { get { return "ultrapuck.puckmagnet"; } }
-        public override string Name { get { return "Puck Magnet"; } }
-        public override string Description { get { return CardText.Stat(1.5f, "Pick-up Range", true) + "\nGrab a loose puck from further away."; } }
-        public override Color Color { get { return new Color(0.90f, 0.35f, 0.65f); } }
-        public override int MaxPerPlayer { get { return 3; } }
-        public override void Apply(CardStats s) { s.PickupRange += 0.5f; } // adds up: 3 cards = +150%
     }
 
     internal sealed class PuckGunCard : UltraCard
