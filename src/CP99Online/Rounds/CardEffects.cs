@@ -377,11 +377,112 @@ namespace CP99Online.Rounds
             Net.NetLog.Info("Head Start: team " + (team + 1) + " (" + best + " vs " + string.Join("/", count.Values.Select(v => v.ToString()).ToArray()) + ") starts with the puck: " + b.name);
         }
 
+        /// <summary>
+        /// Double Agent: at every face-off, some players start on the other team's side: their spawn is mirrored across
+        /// the line halfway between the two teams (so on any rink they end up next to the other team's spawn, facing
+        /// the same way the other team does). Each Player: everyone holding the card, plus a random teammate for each
+        /// extra copy. Team Vote (everyone on a team holds the team's cards): as many random players as the team has
+        /// copies.
+        /// </summary>
+        private static void DoubleAgents(GameManager gm)
+        {
+            var seats = CardGame.Seats;
+            if (seats.Count == 0) return;
+            var live = seats.Where(s => s.Ball != null && s.Ball.alive && !s.Ball.fallen).ToList();
+            var teams = live.Select(s => s.Team).Distinct().ToList();
+            if (teams.Count < 2) return;
+            // where each team starts, before anyone moves
+            var home = new Dictionary<int, Vector2>();
+            foreach (var t in teams) home[t] = Centroid(live.Where(s => s.Team == t));
+            var moved = new List<BallData>();
+            foreach (var t in teams)
+            {
+                var members = live.Where(s => s.Team == t).ToList();
+                var copies = members.Select(s => StatsOf(s).DoubleAgent).ToList();
+                if (copies.Max() <= 0) continue;
+                var agents = new List<Seat>();
+                if (CardGame.TeamMode)
+                    agents.AddRange(members.OrderBy(m => Random.value).Take(Mathf.Min(copies.Max(), members.Count)));
+                else
+                {
+                    var extra = 0;
+                    for (var i = 0; i < members.Count; i++)
+                        if (copies[i] > 0) { agents.Add(members[i]); extra += copies[i] - 1; }
+                    agents.AddRange(members.Where(m => !agents.Contains(m)).OrderBy(m => Random.value).Take(extra).ToList());
+                }
+                var a = home[t];
+                var b = Centroid(live.Where(s => s.Team != t));
+                var n = b - a;
+                if (n.sqrMagnitude < 0.01f) continue;
+                n.Normalize();
+                var mid = (a + b) / 2f;
+                foreach (var seat in agents)
+                {
+                    var ball = seat.Ball;
+                    var from = (Vector2)ball.transform.position;
+                    var want = from - 2f * Vector2.Dot(from - mid, n) * n;
+                    var to = FreeSpot(want, b, Radius(ball.GetComponent<Collider2D>()), moved);
+                    if (!to.HasValue) { Net.NetLog.Info("Double Agent: no room on the other side for " + seat.Name); continue; }
+                    var up = (Vector2)ball.transform.up;
+                    var faced = up - 2f * Vector2.Dot(up, n) * n;
+                    ball.transform.position = new Vector3(to.Value.x, to.Value.y, ball.transform.position.z);
+                    ball.transform.rotation = Quaternion.Euler(0f, 0f, Mathf.Atan2(faced.y, faced.x) * Mathf.Rad2Deg - 90f);
+                    var rb = ball.GetComponent<Rigidbody2D>();
+                    if (rb != null) { rb.position = to.Value; rb.rotation = ball.transform.eulerAngles.z; rb.velocity = Vector2.zero; }
+                    Net.NetSession.MarkTeleport(ball); // clients jump them there instead of sliding across the rink
+                    moved.Add(ball);
+                    Net.NetLog.Info("Double Agent: " + seat.Name + " (team " + (t + 1) + ") starts on the other side, moved " + Vector2.Distance(from, to.Value).ToString("F1"));
+                }
+            }
+        }
+
+        private static Vector2 Centroid(IEnumerable<Seat> seats)
+        {
+            var sum = Vector2.zero; var k = 0;
+            foreach (var s in seats) { sum += (Vector2)s.Ball.transform.position; k++; }
+            return k > 0 ? sum / k : Vector2.zero;
+        }
+
+        /// <summary>The spot nearest <paramref name="want"/> that is on the rink and clear of walls and players
+        /// (searching outward in rings, then toward <paramref name="fallback"/>), or null.</summary>
+        private static Vector2? FreeSpot(Vector2 want, Vector2 fallback, float r, List<BallData> moved)
+        {
+            for (var step = 0; step <= 4; step++)
+            {
+                var basePos = Vector2.Lerp(want, fallback, step * 0.25f);
+                if (Clear(basePos, r, moved)) return basePos;
+                for (var ring = 1; ring <= 3; ring++)
+                    for (var k = 0; k < 8; k++)
+                    {
+                        var ang = k * Mathf.PI / 4f;
+                        var p = basePos + new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * r * 2.4f * ring;
+                        if (Clear(p, r, moved)) return p;
+                    }
+            }
+            return null;
+        }
+
+        private static int _groundMask = -1;
+
+        private static bool Clear(Vector2 p, float r, List<BallData> moved)
+        {
+            if (_groundMask < 0) _groundMask = 1 << LayerMask.NameToLayer("Ground");
+            if (Physics2D.OverlapCircle(p, 0.4f, _groundMask) == null) return false; // off the rink: they'd fall (BallFall)
+            foreach (var c in Physics2D.OverlapCircleAll(p, r * 1.1f))
+            {
+                if (c == null || c.isTrigger || ((1 << c.gameObject.layer) & _groundMask) != 0) continue;
+                return false; // a wall, a goal frame, a player, the puck
+            }
+            foreach (var b in moved) if (Vector2.Distance(b.transform.position, p) < r * 2.2f) return false;
+            return true;
+        }
+
         /// <summary>Head Start: after a face-off reset, move each player part of the way toward the puck (SpawnCloser, for mods).</summary>
         internal static void AfterFaceOff()
         {
             var gm = Globals.gameManager;
             if (gm == null || gm.puck == null) return;
+            DoubleAgents(gm);
             HeadStartPuck(gm);
             var target = gm.puck.transform.position;
             foreach (var kv in _applied)
@@ -464,6 +565,9 @@ namespace CP99Online.Rounds
             if (!Same(st.DashCooldown, 1f))
                 lines.Add(CardText.Stat(1f / Mathf.Clamp(st.DashCooldown, 0.1f, 5f), "Dash Recharge Speed", true) +
                     "  (" + (GameDashCooldown * Mathf.Clamp(st.DashCooldown, 0.1f, 5f)).ToString("0.0") + " s per charge, normally 2.0 s)");
+            if (st.DoubleAgent > 0) lines.Add(CardGame.TeamMode
+                ? CardText.Good(st.DoubleAgent + " random " + (st.DoubleAgent == 1 ? "player starts" : "players start") + " face-offs on the other side")
+                : CardText.Good("Starts face-offs on the other side") + (st.DoubleAgent > 1 ? " " + CardText.Neutral("(+" + (st.DoubleAgent - 1) + " random " + (st.DoubleAgent == 2 ? "teammate" : "teammates") + ")") : string.Empty));
             if (st.SpawnCloser > 0f) lines.Add(CardText.Stat(1f - Mathf.Clamp(st.SpawnCloser, 0f, 0.6f), "Face-off Distance", false));
             if (st.HeadStart > 0) lines.Add(CardText.Good("Head Start x" + st.HeadStart) + "  (the team with the most starts face-offs with the puck)");
             if (st.OpponentSpeed < 0.999f) lines.Add(CardText.Stat(st.OpponentSpeed, "Opponent Move Speed", false));

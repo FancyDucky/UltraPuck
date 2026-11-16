@@ -44,6 +44,9 @@ namespace UltraPuck
         public float SpawnCloser;
         /// <summary>Head Start copies: at every face-off, the team with the most starts with the puck (a tie: nobody).</summary>
         public int HeadStart;
+        /// <summary>Double Agent copies: you start every face-off on the other team's side (each extra copy sends a random
+        /// teammate too). In Team Vote the team's copies send that many random players.</summary>
+        public int DoubleAgent;
         /// <summary>Pylons (a solid dummy player) placed in front of your team's net.</summary>
         public int Pylons;
         /// <summary>Braking fires a shot (2 s cooldown) that stuns the first player it hits (teammates too) for 1 s and
@@ -112,7 +115,7 @@ namespace UltraPuck
             new DoubleDashCard(), new SpeedUpCard(), new PowerShotCard(),
             new QuickRechargeCard(), new HeavyweightCard(), new FeatherweightCard(),
             new OverChargeCard(), new SlowPokeCard(), new HeadStartCard(),
-            new PylonGoalieCard(), new PuckGunCard(),
+            new PylonGoalieCard(), new DoubleAgentCard(), new PuckGunCard(),
             new FriendlyFireCard(), new InvisibilityCard(), new ShockwaveCard(),
         };
 
@@ -264,6 +267,18 @@ namespace UltraPuck
         public override Color Color { get { return new Color(0.40f, 0.85f, 0.65f); } }
         public override int MaxPerPlayer { get { return 3; } }
         public override void Apply(CardStats s) { s.HeadStart++; }
+    }
+
+    internal sealed class DoubleAgentCard : UltraCard
+    {
+        public override CardTier Tier { get { return CardTier.B; } }
+        public override string Id { get { return "ultrapuck.doubleagent"; } }
+        public override string Name { get { return "Double Agent"; } }
+        public override string Description { get { return "You start every face-off " + CardText.Good("on the other team's side") +
+            ".\n" + CardText.Neutral("Team Vote: one random player, +1 per extra copy."); } }
+        public override Color Color { get { return new Color(0.35f, 0.38f, 0.55f); } }
+        public override int MaxPerPlayer { get { return 3; } }
+        public override void Apply(CardStats s) { s.DoubleAgent++; }
     }
 
     internal sealed class PylonGoalieCard : UltraCard

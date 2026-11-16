@@ -33,6 +33,7 @@ CARDS = {
     'friendlyfire': 'ultrapuck.friendlyfire',
     'invisibility': 'ultrapuck.invisibility',
     'shockwave': 'ultrapuck.shockwave',
+    'doubleagent': 'ultrapuck.doubleagent',
 }
 
 
