@@ -167,6 +167,15 @@ namespace CP99Online.Net
                 SteamNetworking.AcceptP2PSessionWithUser(req.m_steamIDRemote);
         }
 
+        /// <summary>For the log: whether Steam sends this peer's packets straight across or through its relay servers.</summary>
+        public string Route(int peer)
+        {
+            CSteamID id;
+            P2PSessionState_t st;
+            if (!_steamById.TryGetValue(peer, out id) || !SteamNetworking.GetP2PSessionState(id, out st)) return "route unknown";
+            return st.m_bUsingRelay != 0 ? "through Steam's relay" : "direct";
+        }
+
         public CSteamID SteamIdOf(int peer)
         {
             CSteamID id;

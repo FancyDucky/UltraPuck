@@ -56,6 +56,7 @@ namespace CP99Online
 
             LobbyStep(s, t);
             if (!string.IsNullOrEmpty(_rounds)) RoundsStep(t);
+            GivePuck();
 
             if (Match.Active && t > _nextLog)
             {
@@ -69,6 +70,26 @@ namespace CP99Online
         private bool _goalsSet;
         private int _phasesSeen;
         private bool _inPhase;
+
+        // CP99_TEST_GIVEPUCK=1: the host keeps handing a loose puck to the client's player (spin-with-the-puck tests)
+        private static readonly bool GivePuckTest = Environment.GetEnvironmentVariable("CP99_TEST_GIVEPUCK") == "1";
+        private void GivePuck()
+        {
+            if (!GivePuckTest || _role != "host" || !Match.Active) return;
+            var gm = Globals.gameManager;
+            if (gm == null || gm.puck == null || gm.startCountdown > 0f || gm.roundOver) return;
+            var p = gm.puck.GetComponent<Puck>();
+            if (p == null || p.carryer != null) return;
+            for (var i = 0; i < Match.Balls.Length; i++)
+            {
+                var b = Match.Balls[i];
+                if (b == null || !Match.IsRemote(i) || !b.alive || b.fallen) continue;
+                gm.puck.transform.position = b.transform.position + b.transform.up;
+                var h = b.GetComponent<BallHandling>();
+                if (h != null) h.Carry(gm.puck);
+                return;
+            }
+        }
 
         private void RoundsStep(float t)
         {

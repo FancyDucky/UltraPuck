@@ -50,6 +50,7 @@ namespace CP99Online.Net
             if (_transport == null) return;
 
             foreach (var c in _conns.Values) c.Update(Now);
+            NetReport();
             if (Now - _lastKeepAlive > 1f)
             {
                 _lastKeepAlive = Now;
@@ -57,6 +58,38 @@ namespace CP99Online.Net
                 foreach (var c in _conns.Values) c.SendUnreliable(_msg);
             }
         }
+
+        // ---- connection report in the log every 10 s: ping (lowest / average / highest), slow frames on this PC,
+        // the longest gap between snapshots (clients) and whether Steam relays the traffic. A ping spike with a
+        // slow frame next to it was this PC hitching; one without was the connection.
+        private float _reportAt, _worstFrame;
+        private int _slowFrames;
+        internal float WorstSnapGap; // client: longest wait between two snapshots since the last report
+
+        private void NetReport()
+        {
+            var dt = Time.unscaledDeltaTime;
+            if (dt > 0.05f) _slowFrames++;
+            if (dt > _worstFrame) _worstFrame = dt;
+            if (Now < _reportAt) return;
+            var first = _reportAt == 0f;
+            _reportAt = Now + 10f;
+            if (first) { _slowFrames = 0; _worstFrame = 0f; WorstSnapGap = 0f; return; }
+            var steam = _transport as SteamTransport;
+            foreach (var c in _conns.Values)
+            {
+                if (c.PingCount == 0) continue;
+                var line = "Connection" + (Role == Role.Host ? " to client " + c.PeerId : string.Empty) + ": ping " + Ms(c.PingMin) + " / " + Ms(c.PingSum / c.PingCount) + " / " + Ms(c.PingMax) + " ms (low / avg / high)";
+                if (Role == Role.Client) line += ", longest snapshot gap " + Ms(WorstSnapGap) + " ms";
+                line += ", slow frames here " + _slowFrames + " (worst " + Ms(_worstFrame) + " ms)";
+                if (steam != null) line += ", " + steam.Route(c.PeerId);
+                NetLog.Info(line);
+                c.ResetPingStats();
+            }
+            _slowFrames = 0; _worstFrame = 0f; WorstSnapGap = 0f;
+        }
+
+        private static int Ms(float s) { return Mathf.RoundToInt(s * 1000f); }
 
         private void LateUpdate()
         {

@@ -556,15 +556,15 @@ namespace CP99Online.Net
             return axis > 0.5f || Input.GetButton(bi.buttonName_charge) || Input.GetButton(bi.buttonName_chargeAlt);
         }
 
-        private void SendInput(Connection c, int slot)
+        /// <summary>This PC's move and aim sticks for one of its players, as sent to the host (zero while paused).</summary>
+        private void ReadSticks(int slot, out Vector2 move, out Vector2 aim, out byte held)
         {
             var bi = LocalInput(slot);
-            var pad = PadOf(slot);
             var gm = Globals.gameManager;
             var paused = gm != null && gm.pauseMenuManager != null && gm.pauseMenuManager.paused;
-            var move = Vector2.zero;
-            var aim = Vector2.zero;
-            byte held = 0;
+            move = Vector2.zero;
+            aim = Vector2.zero;
+            held = 0;
             if (bi != null && !paused)
             {
                 move = bi.axis1Input;
@@ -583,10 +583,20 @@ namespace CP99Online.Net
             if (TestHarness.DriveInput)
             {
                 move = new Vector2(Mathf.Cos(Now * 0.8f), Mathf.Sin(Now * 0.8f));
-                aim = move;
+                aim = SpinTest ? new Vector2(Mathf.Cos(Now * 9f), Mathf.Sin(Now * 9f)) : move; // test: spin fast
                 held = 0;
                 if (TestHarness.BrakeTest && Mathf.Repeat(Now, 8f) < 0.4f) held |= Proto.HSprint; // brake now and then
             }
+        }
+
+        private static readonly bool SpinTest = System.Environment.GetEnvironmentVariable("CP99_TEST_SPIN") == "1";
+
+        private void SendInput(Connection c, int slot)
+        {
+            var pad = PadOf(slot);
+            Vector2 move, aim;
+            byte held;
+            ReadSticks(slot, out move, out aim, out held);
             Begin(Msg.Input);
             _msg.U8((byte)slot);
             _msg.U32(++pad.Seq);
@@ -627,6 +637,7 @@ namespace CP99Online.Net
             s.Disrespect = r.Bool();
             s.PuckTeleport = r.U8();
 
+            if (_latestSnapRecv > 0f && Now - _latestSnapRecv < 2f && Now - _latestSnapRecv > WorstSnapGap) WorstSnapGap = Now - _latestSnapRecv;
             _latestSnapRecv = Now;
             ClockSample(s.Time, Now);
             _snaps.Add(s);
@@ -689,6 +700,49 @@ namespace CP99Online.Net
         // ~50 ms, so steady movement stays immediate and corrections blend in.
         private readonly Vector2[] _ownLast = new Vector2[32], _ownOffset = new Vector2[32], _ownVel = new Vector2[32];
         private readonly bool[] _ownInit = new bool[32];
+
+        // Own players' facing is worked out here from this PC's own sticks, with the same turning the host does
+        // (BallHandling: ease toward the aim stick, else the move stick, at 10x per second). It reacts the moment you
+        // move the stick, instead of when the next snapshot happens to arrive, which on a bursty connection made
+        // your player freeze and then jump. With the sticks let go it settles onto the host's facing.
+        private readonly float[] _ownRot = new float[32], _ownRotAt = new float[32];
+
+        // tests: while this PC carries the puck, how far the old straight-line guess would have put the puck from
+        // where it's drawn now, and the biggest one-frame turn of the carrier
+        private float _carryLogAt, _carryOldErr, _carryTurn, _carryLastRot = float.NaN;
+        private int _carryFrames;
+        private void MeasureCarry(Snap pb, Transform carrier)
+        {
+            Snap la, lb; float lt;
+            Find(RenderTime + _renderDelay, true, out la, out lb, out lt);
+            var old = new Vector2(Mathf.LerpUnclamped(la.PuckX, lb.PuckX, lt), Mathf.LerpUnclamped(la.PuckY, lb.PuckY, lt));
+            _carryOldErr = Mathf.Max(_carryOldErr, Vector2.Distance(old, (Vector2)(carrier.position + carrier.up)));
+            var z = carrier.eulerAngles.z;
+            if (!float.IsNaN(_carryLastRot)) _carryTurn = Mathf.Max(_carryTurn, Mathf.Abs(Mathf.DeltaAngle(_carryLastRot, z)));
+            _carryLastRot = z;
+            _carryFrames++;
+            if (Now < _carryLogAt) return;
+            _carryLogAt = Now + 1f;
+            NetLog.Info("TEST carry: " + _carryFrames + " frames, old guess was up to " + _carryOldErr.ToString("F2") + " units off, biggest turn in one frame " + _carryTurn.ToString("F1") + " deg");
+            _carryOldErr = 0f; _carryTurn = 0f; _carryFrames = 0;
+        }
+
+        private float OwnFacing(int i, float hostRot, bool reset)
+        {
+            if (i >= _ownRot.Length) return hostRot;
+            var dt = Mathf.Clamp(Time.deltaTime, 0f, 0.1f);
+            if (reset || Now - _ownRotAt[i] > 0.5f) { _ownRotAt[i] = Now; return _ownRot[i] = hostRot; } // swap, respawn, new match
+            _ownRotAt[i] = Now;
+            Vector2 move, aim;
+            byte held;
+            ReadSticks(i, out move, out aim, out held);
+            var idle = aim.magnitude <= 0.2f && move.magnitude <= 0.2f;
+            if (aim.magnitude > 0.2f) _ownRot[i] = Mathf.LerpAngle(_ownRot[i], Mathf.Atan2(aim.y, aim.x) * Mathf.Rad2Deg + 180f, dt * 10f);
+            else if (move.magnitude > 0.2f) _ownRot[i] = Mathf.LerpAngle(_ownRot[i], Mathf.Atan2(move.y, move.x) * Mathf.Rad2Deg - 90f, dt * 10f);
+            else _ownRot[i] = Mathf.LerpAngle(_ownRot[i], hostRot, dt * 4f);
+            if (idle && Mathf.Abs(Mathf.DeltaAngle(_ownRot[i], hostRot)) > 150f) _ownRot[i] = hostRot;
+            return _ownRot[i];
+        }
 
         private Vector2 SmoothOwn(int i, Vector2 target, Snap sa, Snap sb, bool teleported)
         {
@@ -754,9 +808,12 @@ namespace CP99Online.Net
                 var bt = sa.Teleport[i] != sb.Teleport[i] ? 1f : st; // teleported (bot swap): jump, don't slide
                 if (b.Teleport[i] != _teleportSeen[i]) { _teleportSeen[i] = b.Teleport[i]; NetLog.Debug("Client: player " + i + " teleported (snapped)"); }
                 var target = new Vector2(Mathf.LerpUnclamped(sa.X[i], sb.X[i], bt), Mathf.LerpUnclamped(sa.Y[i], sb.Y[i], bt));
-                if (own) target = SmoothOwn(i, target, sa, sb, bt == 1f && sa.Teleport[i] != sb.Teleport[i]);
+                var jumped = sa.Teleport[i] != sb.Teleport[i];
+                if (own) target = SmoothOwn(i, target, sa, sb, jumped);
                 tr.position = new Vector3(target.x, target.y, tr.position.z);
-                tr.rotation = Quaternion.Euler(0f, 0f, Mathf.LerpAngle(sa.Rot[i], sb.Rot[i], bt));
+                var rot = Mathf.LerpAngle(sa.Rot[i], sb.Rot[i], bt);
+                if (own) rot = OwnFacing(i, rot, jumped || (sb.BallFlags[i] & Proto.BAlive) == 0);
+                tr.rotation = Quaternion.Euler(0f, 0f, rot);
                 if (TestHarness.Active) MeasureMotion(i, own, tr.position);
 
                 var f = b.BallFlags[i];
@@ -795,6 +852,17 @@ namespace CP99Online.Net
             var ptt = pa.PuckTeleport != pb.PuckTeleport ? 1f : (ownPuck ? lt : t);
             pt.position = new Vector3(Mathf.LerpUnclamped(pa.PuckX, pb.PuckX, ptt), Mathf.LerpUnclamped(pa.PuckY, pb.PuckY, ptt), pt.position.z);
             pt.rotation = Quaternion.Euler(0f, 0f, Mathf.LerpAngle(pa.PuckRot, pb.PuckRot, ptt));
+            // A carried puck sits 1 unit in front of its carrier (BallHandling.FixedUpdate). Put it there from the
+            // carrier as drawn, rather than guessing its path: while spinning it circles the player, and carrying a
+            // circling point on in a straight line threw it a player's width away.
+            var heldBy = Match.Ball(pb.Carrier);
+            if (!replaying && heldBy != null && pa.Carrier == pb.Carrier)
+            {
+                var ct = heldBy.transform;
+                var front = ct.position + ct.up;
+                pt.position = new Vector3(front.x, front.y, pt.position.z);
+                if (TestHarness.Active && IsLocal(pb.Carrier)) MeasureCarry(pb, heldBy.transform);
+            }
             var carrierBall = Match.Ball(b.Carrier);
             puck.carryer = carrierBall != null ? carrierBall.gameObject : null;
             puck.disrespecting = b.Disrespect;

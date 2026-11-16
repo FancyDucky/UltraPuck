@@ -44,7 +44,7 @@ namespace UltraPuck
         public float SpawnCloser;
         /// <summary>Head Start copies: at every face-off, the team with the most starts with the puck (a tie: nobody).</summary>
         public int HeadStart;
-        /// <summary>Puck pick-up distance multiplier (1.25 = grab it from 25% further).</summary>
+        /// <summary>Puck pick-up distance multiplier (1.5 = grab it from 50% further).</summary>
         public float PickupRange = 1f;
         /// <summary>Pylons (a solid dummy player) placed in front of your team's net.</summary>
         public int Pylons;
@@ -284,10 +284,10 @@ namespace UltraPuck
         public override CardTier Tier { get { return CardTier.A; } }
         public override string Id { get { return "ultrapuck.puckmagnet"; } }
         public override string Name { get { return "Puck Magnet"; } }
-        public override string Description { get { return CardText.Stat(1.25f, "Pick-up Range", true) + "\nGrab a loose puck from further away."; } }
+        public override string Description { get { return CardText.Stat(1.5f, "Pick-up Range", true) + "\nGrab a loose puck from further away."; } }
         public override Color Color { get { return new Color(0.90f, 0.35f, 0.65f); } }
         public override int MaxPerPlayer { get { return 3; } }
-        public override void Apply(CardStats s) { s.PickupRange += 0.25f; } // adds up: 3 cards = +75%
+        public override void Apply(CardStats s) { s.PickupRange += 0.5f; } // adds up: 3 cards = +150%
     }
 
     internal sealed class PuckGunCard : UltraCard

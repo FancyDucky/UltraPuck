@@ -39,6 +39,11 @@ namespace CP99Online.Net
         /// <summary>Round-trip time in seconds (smoothed), or -1 until the first answer (older versions never answer).</summary>
         public float Ping = -1f;
 
+        // ping answers since the last report (for the log): lowest, highest, total, count
+        public float PingMin = float.MaxValue, PingMax, PingSum;
+        public int PingCount;
+        public void ResetPingStats() { PingMin = float.MaxValue; PingMax = 0f; PingSum = 0f; PingCount = 0; }
+
         public Connection(ITransport transport, int peerId, float now)
         {
             _transport = transport;
@@ -134,7 +139,11 @@ namespace CP99Online.Net
             else if (kind == KindPong && length >= 5)
             {
                 var rtt = now - System.BitConverter.ToSingle(data, 1);
-                if (rtt >= 0f && rtt < 5f) Ping = Ping < 0f ? rtt : Ping + (rtt - Ping) * 0.3f;
+                if (rtt >= 0f && rtt < 5f)
+                {
+                    Ping = Ping < 0f ? rtt : Ping + (rtt - Ping) * 0.3f;
+                    PingMin = System.Math.Min(PingMin, rtt); PingMax = System.Math.Max(PingMax, rtt); PingSum += rtt; PingCount++;
+                }
             }
         }
 
