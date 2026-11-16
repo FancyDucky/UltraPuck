@@ -211,7 +211,12 @@ namespace CP99Online.Rounds
         /// <summary>The card's own rule (e.g. Friendly Fire needs a team of 2 or more; bots count).</summary>
         private static bool CanOffer(UltraCard c, Seat seat)
         {
-            try { return c.CanOffer(Seats.Count(s => s.Team == seat.Team)); }
+            try
+            {
+                var req = c.RequiresTeamCard;
+                if (!string.IsNullOrEmpty(req) && !Seats.Any(s => s.Team == seat.Team && s.Cards.Contains(req))) return false;
+                return c.CanOffer(Seats.Count(s => s.Team == seat.Team));
+            }
             catch (System.Exception ex) { Plugin.Logger_.LogError("Card " + c.Id + " CanOffer failed: " + ex); return false; }
         }
 

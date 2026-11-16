@@ -193,6 +193,12 @@ namespace CP99Online.Rounds
 
         internal static void ClearGun() { _gunFiredAt.Clear(); _gunReady.Clear(); }
 
+        /// <summary>Host / offline (Team Play): the Puck Gun can fire again right away.</summary>
+        internal static void RestoreGun(BallData b) { if (b != null) _gunReady.Remove(b); }
+
+        /// <summary>Every PC: the Puck Gun cooldown bar shows ready.</summary>
+        internal static void ShowGunReady(BallData b) { if (b != null) _gunFiredAt.Remove(b); }
+
         /// <summary>Puck Gun cooldown left for this ball (0 = ready / never fired), on every PC.</summary>
         internal static float GunCooldownLeft(BallData b)
         {

@@ -91,8 +91,60 @@ namespace CP99Online
             }
         }
 
+        // CP99_TEST_PASS=1 (host): every 5 s the host's player uses up its dash, takes the loose puck and passes it to a
+        // bot teammate (Team Play tests)
+        private static readonly bool PassTest = Environment.GetEnvironmentVariable("CP99_TEST_PASS") == "1";
+        private float _passAt = -1f;
+        private BallData _passer;
+        private float _passWhy;
+        private void PassStep()
+        {
+            if (!PassTest || _role != "host" || !Match.Active) return;
+            var gm = Globals.gameManager;
+            if (gm == null || gm.puck == null || gm.startCountdown > 0f || gm.roundOver || Rounds.CardGame.PhaseActive) { _passAt = -1f; return; }
+            BallData me = null;
+            for (var i = 0; i < Match.Balls.Length; i++)
+            {
+                var b = Match.Balls[i];
+                if (b != null && !Match.IsRemote(i) && b.playerData != null && !b.playerData.AI) { me = b; break; }
+            }
+            var mate = me != null ? me.team.members.FirstOrDefault(m => m != null && m != me && m.alive && !m.fallen) : null;
+            if (Time.time - _passWhy > 5f) { _passWhy = Time.time; NetLog.Info("TEST pass: me=" + (me != null ? me.name + " alive=" + me.alive + " fallen=" + me.fallen : "none") + " mate=" + (mate != null ? mate.name : "none") + " passAt=" + _passAt.ToString("F1") + " now=" + Time.time.ToString("F1")); }
+            if (me == null || !me.alive || me.fallen || mate == null) return;
+            var h = me.GetComponent<BallHandling>();
+            if (_passAt < 0f) { _passAt = Time.time + 1f; return; }
+            if (_passer == null && Time.time >= _passAt)
+            {
+                var p = gm.puck.GetComponent<Puck>();
+                if (p != null && p.carryer != null && p.carryer != me.gameObject) return;
+                var shove = me.GetComponent<BallShove>();
+                if (shove != null) shove.shoveTimer = 1.5f; // dash used
+                var d = Rounds.CardEffects.DashOf(me);
+                if (d != null) d.Charges = 0f;
+                gm.puck.transform.position = me.transform.position + me.transform.up;
+                if (h != null) h.Carry(gm.puck);
+                _passer = me;
+                _passAt = Time.time + 0.3f;
+                NetLog.Info("TEST pass: dash before pass " + (shove != null ? shove.shoveTimer.ToString("F2") : "?") + (d != null ? " charges " + d.Charges.ToString("F2") : string.Empty));
+            }
+            else if (_passer != null && Time.time >= _passAt)
+            {
+                _passer = null;
+                _passAt = Time.time + 3f;
+                if (h == null || me.carryObject == null) return;
+                var puck = me.carryObject;
+                h.Drop(puck, 0.5f, false);
+                var dir = ((Vector2)(mate.transform.position - me.transform.position)).normalized;
+                puck.transform.position = me.transform.position + (Vector3)(dir * 1.0f);
+                var rb = puck.GetComponent<Rigidbody2D>();
+                if (rb != null) rb.velocity = dir * 25f;
+                NetLog.Info("TEST pass: passed toward " + mate.name);
+            }
+        }
+
         private void RoundsStep(float t)
         {
+            PassStep();
             if (_role == "host" && Match.Active && !_goalsSet) { _goalsSet = true; int g; NumGoalsToWinManager.numGoalsToWin = int.TryParse(Environment.GetEnvironmentVariable("CP99_ROUNDS_GOALS"), out g) ? g : 3; NetLog.Info("TEST rounds: goals to win = " + NumGoalsToWinManager.numGoalsToWin); }
             if (!Match.Active) { _goalsSet = false; }
             DashBurst();

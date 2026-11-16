@@ -77,6 +77,12 @@ namespace CP99Online.Rounds
             NetLog.Info("Rounds: " + (b.playerData != null && b.playerData.account != null ? b.playerData.account.name : "?") + " turned invisible");
         }
 
+        /// <summary>Host / offline (Team Play): Invisibility can be used again right away.</summary>
+        internal static void Restore(BallData b) { if (b != null) _ready.Remove(b); }
+
+        /// <summary>Every PC: the cooldown bar shows ready (an invisibility that's running keeps running).</summary>
+        internal static void ShowReady(BallData b) { if (b != null) _startedAt.Remove(b); }
+
         /// <summary>Every PC: start (or restart) invisibility on this ball.</summary>
         internal static void Begin(BallData b, float seconds)
         {

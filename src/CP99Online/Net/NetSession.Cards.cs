@@ -191,9 +191,26 @@ namespace CP99Online.Net
             BroadcastReliable();
         }
 
+        /// <summary>Host: Team Play restored these slots' cooldowns (clients empty the bars and draw the ring).</summary>
+        internal void HostSendRestored(System.Collections.Generic.List<int> slots)
+        {
+            if (_clients.Count == 0 || slots.Count == 0) return;
+            Begin(Msg.CardShot);
+            _msg.U8(7);
+            _msg.U8(slots.Count);
+            foreach (var slot in slots) _msg.U8(slot);
+            BroadcastReliable();
+        }
+
         private void ClientHandleShot(Reader r)
         {
             var kind = r.U8();
+            if (kind == 7)
+            {
+                int n = r.U8();
+                for (var k = 0; k < n; k++) { int restored = r.U8(); if (Match.Active) CardEffects.ShowRestored(Match.Ball(restored)); }
+                return;
+            }
             if (kind == 6) { int slowSlot = r.U8(); var secs = r.F32(); if (Match.Active) CardFx.Slowed(Match.Ball(slowSlot), secs); return; }
             if (kind == 4) { int boostSlot = r.U8(); var secs = r.F32(); if (Match.Active) CardFx.Boosted(Match.Ball(boostSlot), secs); return; }
             if (kind == 5)

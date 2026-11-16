@@ -66,6 +66,13 @@ namespace UltraPuck
 
         internal static void Clear() { _bySlot.Clear(); }
 
+        /// <summary>Client: the host says this slot's cooldowns were restored (Team Play).</summary>
+        internal static void Refill(int slot)
+        {
+            Remote r;
+            if (slot >= 0 && _bySlot.TryGetValue(slot, out r)) r.Charges = r.Max;
+        }
+
         /// <summary>Called once per frame by the meter.</summary>
         internal static void Tick(float dt)
         {

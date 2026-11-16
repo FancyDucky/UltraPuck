@@ -136,6 +136,19 @@ namespace CP99Online.Rounds
             if (TestHarness.FxShots) _shotAt2 = Time.unscaledTime + 2.5f;
         }
 
+        private static readonly Color RestoredColor = new Color(0.35f, 1f, 0.6f, 1f);
+
+        /// <summary>Every PC (Team Play): this ball's cooldowns are ready again: drop the Shockwave bar, flash a green ring.</summary>
+        internal static void CooldownsRestored(BallData b)
+        {
+            if (b == null) return;
+            _shock.Remove(b);
+            if (!b.alive || b.fallen) return;
+            var r = CardEffects.Radius(b.GetComponent<Collider2D>());
+            var pos = b.transform.position;
+            Spawn(new Vector3(pos.x, pos.y, pos.z - 0.05f), r * 2.2f, RestoredColor, 0f, 0.35f, 0.18f, 0.9f);
+        }
+
         private static readonly HashSet<BallData> _shockSeen = new HashSet<BallData>();
 
         private static void ShockBars()

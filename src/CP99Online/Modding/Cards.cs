@@ -58,6 +58,11 @@ namespace UltraPuck
         public bool Invisibility;
         /// <summary>A teammate dashing into you gives you +80% move speed for 2 s.</summary>
         public bool TeammateBoost;
+        /// <summary>Team Play: a pass you complete to a teammate (no opponent touching the puck on the way) restores
+        /// all your cooldowns: dash charges, Shockwave, Puck Gun, Invisibility.</summary>
+        public bool PassRefresh;
+        /// <summary>Team Play II: your completed passes restore the cooldowns of everyone on your team.</summary>
+        public bool PassRefreshTeam;
     }
 
     /// <summary>How strong a card is, shown as the colour of its border (None: no tier border).</summary>
@@ -96,6 +101,10 @@ namespace UltraPuck
         /// <summary>Can this card be offered to a player whose team has <paramref name="teamSize"/> players (bots included)?</summary>
         public virtual bool CanOffer(int teamSize) { return true; }
 
+        /// <summary>Id of a card someone on the player's team must already own before this one can be offered
+        /// (null = no requirement), e.g. a tier 2 version of a card.</summary>
+        public virtual string RequiresTeamCard { get { return null; } }
+
         /// <summary>Change the player's stats. Called once per copy of the card the player owns.</summary>
         public virtual void Apply(CardStats stats) { }
 
@@ -117,6 +126,7 @@ namespace UltraPuck
             new OverChargeCard(), new SlowPokeCard(), new HeadStartCard(),
             new PylonGoalieCard(), new DoubleAgentCard(), new PuckGunCard(),
             new FriendlyFireCard(), new InvisibilityCard(), new ShockwaveCard(),
+            new TeamPlayCard(), new TeamPlay2Card(),
         };
 
         /// <summary>Every registered card, built-in ones first.</summary>
@@ -336,5 +346,33 @@ namespace UltraPuck
         public override Color Color { get { return new Color(0.35f, 0.65f, 1.00f); } }
         public override int MaxPerPlayer { get { return 3; } }
         public override void Apply(CardStats s) { s.Shockwave++; }
+    }
+
+    internal sealed class TeamPlayCard : UltraCard
+    {
+        internal const string CardId = "ultrapuck.teamplay";
+        public override CardTier Tier { get { return CardTier.A; } }
+        public override string Id { get { return CardId; } }
+        public override string Name { get { return "Team Play"; } }
+        public override string Description { get { return "Pass to a teammate to " + CardText.Good("restore all your cooldowns") + ".\n" +
+            CardText.Neutral("Doesn't count if an opponent touches the puck first."); } }
+        public override Color Color { get { return new Color(0.30f, 0.78f, 0.55f); } }
+        public override int MaxPerPlayer { get { return 1; } }
+        public override bool CanOffer(int teamSize) { return teamSize >= 2; }
+        public override void Apply(CardStats s) { s.PassRefresh = true; }
+    }
+
+    internal sealed class TeamPlay2Card : UltraCard
+    {
+        public override CardTier Tier { get { return CardTier.S; } }
+        public override string Id { get { return "ultrapuck.teamplay2"; } }
+        public override string Name { get { return "Team Play II"; } }
+        public override string Description { get { return "Your passes " + CardText.Good("restore the whole team's cooldowns") + ".\n" +
+            CardText.Neutral("Only offered once your team has Team Play."); } }
+        public override Color Color { get { return new Color(0.20f, 0.85f, 0.50f); } }
+        public override int MaxPerPlayer { get { return 1; } }
+        public override string RequiresTeamCard { get { return TeamPlayCard.CardId; } }
+        public override bool CanOffer(int teamSize) { return teamSize >= 2; }
+        public override void Apply(CardStats s) { s.PassRefresh = true; s.PassRefreshTeam = true; }
     }
 }

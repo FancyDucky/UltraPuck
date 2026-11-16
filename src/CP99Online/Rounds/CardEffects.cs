@@ -211,6 +211,7 @@ namespace CP99Online.Rounds
             _boostUntil.Clear();
             _shockAt.Clear();
             _slow.Clear();
+            TeamPlay.Clear();
             CardFx.Clear();
             CardObjects.Clear();
         }
@@ -339,6 +340,35 @@ namespace CP99Online.Rounds
         {
             foreach (var d in _dash.Values)
                 if (d.Charges < d.Max) d.Charges = Mathf.Min(d.Max, d.Charges + dt / d.Cooldown);
+            TeamPlay.Tick();
+        }
+
+        /// <summary>Host / offline: Team Play: every cooldown this player has is ready again (dash, Shockwave, Puck Gun, Invisibility).</summary>
+        internal static void RestoreCooldowns(BallData b)
+        {
+            if (b == null) return;
+            var d = DashOf(b);
+            if (d != null) d.Charges = d.Max;
+            else
+            {
+                var shove = b.GetComponent<BallShove>();
+                // not in the middle of a dash: the game's hit window is the first 0.25 s of its timer
+                if (shove != null && shove.shoveTimer > 0f && shove.shoveTimer <= GameDashCooldown - 0.25f) shove.shoveTimer = 0f;
+            }
+            _shockAt.Remove(b);
+            CardObjects.RestoreGun(b);
+            Invisibility.Restore(b);
+            ShowRestored(b);
+        }
+
+        /// <summary>Every PC: empty this player's cooldown bars and flash a ring around them.</summary>
+        internal static void ShowRestored(BallData b)
+        {
+            if (b == null) return;
+            CardObjects.ShowGunReady(b);
+            Invisibility.ShowReady(b);
+            CardFx.CooldownsRestored(b);
+            if (Net.NetSession.ClientInMatch) UltraPuck.DashTracker.Refill(Net.Match.Slot(b));
         }
 
         internal static float Radius(Collider2D c)
@@ -572,6 +602,8 @@ namespace CP99Online.Rounds
             if (st.HeadStart > 0) lines.Add(CardText.Good("Head Start x" + st.HeadStart) + "  (the team with the most starts face-offs with the puck)");
             if (st.OpponentSpeed < 0.999f) lines.Add(CardText.Stat(st.OpponentSpeed, "Opponent Move Speed", false));
             if (pylons > 0) lines.Add(CardText.Good("+" + Mathf.Min(pylons, 4) + " Pylon Goalie" + (pylons > 1 ? "s" : string.Empty)) + "  (your team's net)");
+            if (st.PassRefreshTeam) lines.Add("Team Play II: your passes " + CardText.Good("restore the whole team's cooldowns"));
+            else if (st.PassRefresh) lines.Add("Team Play: passing " + CardText.Good("restores all your cooldowns"));
             if (st.PuckGun) lines.Add("Puck Gun: brake to fire a " + CardText.Good("1 s Stun") + " shot  (2 s cooldown)");
             if (st.Invisibility) lines.Add("Invisibility: brake to turn " + CardText.Good("invisible for 5 s") + "  (15 s cooldown)");
             if (!Same(st.FriendlyFire, 1f)) lines.Add(CardText.Stat(FriendlyFireOf(st), "Teammate Knockback", true) + "  (dashes and Puck Gun)");

@@ -34,6 +34,8 @@ CARDS = {
     'invisibility': 'ultrapuck.invisibility',
     'shockwave': 'ultrapuck.shockwave',
     'doubleagent': 'ultrapuck.doubleagent',
+    'teamplay': 'ultrapuck.teamplay',
+    'teamplayt': 'ultrapuck.teamplay2',  # Team_Play_T2
 }
 
 
